@@ -1,6 +1,6 @@
 # 英雄联盟业余联赛平台
 
-一个基于 FastAPI + SQLite 的英雄联盟业余联赛管理平台，支持选手管理、战队管理、约战审核、战绩统计等功能。
+一个基于 FastAPI + SQLite + Flutter 的英雄联盟业余联赛管理平台，支持选手管理、战队管理、约战审核、战绩统计等功能。
 
 ## 功能特性
 
@@ -10,7 +10,8 @@
 - **约战系统** - 发布约战、管理员审核、对手应战、战绩截图上传
 - **排行榜** - 胜率榜、KDA榜、MVP榜、积分榜、连胜榜
 - **统计面板** - 平台数据统计、公开数据展示
-- **管理员功能** - 约战审核、战绩录入、数据重置
+- **管理员功能** - 约战审核、战绩录入、数据管理(Excel导入导出)、用户管理
+- **通知系统** - 战队邀请、入队申请、约战邀请等通知
 
 ## 技术栈
 
@@ -19,47 +20,52 @@
 | 后端 | Python 3.12+ / FastAPI |
 | 数据库 | SQLite + SQLAlchemy |
 | 认证 | JWT (python-jose) |
-| 前端 | 原生 HTML/CSS/JavaScript |
+| 移动端 | Flutter + Provider + GoRouter |
 | 运行端口 | 3000 |
 
 ## 项目结构
 
 ```
 lol-league/
-├── backend/
-│   ├── main.py          # FastAPI 主应用
-│   ├── models.py        # SQLAlchemy 数据模型
-│   ├── schemas.py       # Pydantic 请求/响应模型
-│   ├── database.py      # 数据库配置
-│   ├── auth.py          # JWT 认证
-│   ├── requirements.txt # Python 依赖
-│   └── README.md        # 后端说明
-├── lol-league.html      # 前端页面
-├── api.js               # 前端 API 调用
-└── README.md            # 项目说明
+├── backend/                    # FastAPI 后端
+│   ├── main.py               # FastAPI 主应用
+│   ├── models.py             # SQLAlchemy 数据模型
+│   ├── schemas.py            # Pydantic 请求/响应模型
+│   ├── database.py           # 数据库配置
+│   ├── auth.py               # JWT 认证
+│   ├── requirements.txt     # Python 依赖
+│   └── lol-league.db        # SQLite 数据库
+├── lol_league_app/           # Flutter 移动端应用
+│   ├── lib/
+│   │   ├── core/            # 核心配置、网络、工具
+│   │   ├── data/            # 数据层 (models, repositories)
+│   │   ├── domain/          # 业务层 (providers)
+│   │   ├── presentation/   # 界面层 (screens, widgets)
+│   │   └── routes/          # 路由配置
+│   └── pubspec.yaml
+├── lol-league.html           # Web 前端
+└── README.md
 ```
 
 ## 快速开始
 
-### 1. 安装依赖
+### 后端启动
 
 ```bash
 cd backend
 pip install -r requirements.txt
-```
-
-### 2. 启动服务器
-
-```bash
 python main.py
 ```
 
 服务器将在 http://localhost:3000 启动
 
-### 3. 访问应用
+### Flutter 应用启动
 
-- 前端页面: http://localhost:3000
-- API 文档: http://localhost:3000/docs
+```bash
+cd lol_league_app
+flutter pub get
+flutter run
+```
 
 ## 管理员账号
 
@@ -77,12 +83,12 @@ python main.py
 
 | 状态 | 含义 |
 |------|------|
-| `待审核` | 等待管理员审核 |
-| `待应战` | 审核通过，等待对手应战 |
-| `已约战` | 对手已应战，等待比赛 |
-| `已结束` | 比赛结束，已录入战绩 |
-| `已取消` | 发布者或管理员取消 |
-| `未通过` | 管理员驳回 |
+| `pending` | 待审核 |
+| `waiting` | 待应战 |
+| `accepted` | 已约战 |
+| `completed` | 已结束 |
+| `cancelled` | 已取消 |
+| `rejected` | 未通过 |
 
 ## API 接口
 
@@ -103,6 +109,7 @@ python main.py
 | GET | /api/players/rankings/winrate | 胜率榜 |
 | GET | /api/players/rankings/kda | KDA榜 |
 | GET | /api/players/rankings/mvp | MVP榜 |
+| PUT | /api/players/{id}/stats | 更新选手统计 (管理员) |
 
 ### 战队接口
 
@@ -116,6 +123,7 @@ python main.py
 | DELETE | /api/teams/{id} | 解散战队 |
 | GET | /api/teams/rankings/score | 积分榜 |
 | GET | /api/teams/rankings/winStreak | 连胜榜 |
+| PUT | /api/teams/{id}/stats | 更新战队统计 (管理员) |
 
 ### 约战接口
 
@@ -129,6 +137,24 @@ python main.py
 | POST | /api/matches/{id}/screenshot | 上传战绩截图 |
 | POST | /api/matches/{id}/cancel | 取消约战 |
 | POST | /api/matches/{id}/result | 录入战绩 (管理员) |
+
+### 通知接口
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| GET | /api/notifications | 获取通知列表 |
+| POST | /api/notifications | 创建通知 |
+| PUT | /api/notifications/{id} | 更新通知状态 |
+| DELETE | /api/notifications/{id} | 删除通知 |
+| GET | /api/notifications/unread-count | 获取未读数量 |
+
+### 用户管理接口 (管理员)
+
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| GET | /api/users | 获取所有用户 |
+| PUT | /api/users/{id}/admin | 设置/取消管理员 |
+| DELETE | /api/users/{id} | 删除用户 |
 
 ### 统计接口
 
@@ -158,7 +184,7 @@ python main.py
 - `region_group` - 大区
 - `region_small` - 小区
 - `position` - 位置
-- 统计数据: wins, losses, kills, deaths, assists, mvp_count, games_played, win_rate, kda
+- 统计数据: wins, losses, kills, deaths, assists, mvp_count, games_played, win_rate, kda, win_streak
 
 ### Team (战队)
 - `id` - 战队ID
@@ -184,19 +210,34 @@ python main.py
 - `reviewed_at` - 审核时间
 - `reject_reason` - 驳回原因
 
+### Notification (通知)
+- `id` - 通知ID
+- `type` - 通知类型 (team_invite, team_apply, match_invite, match_accept, match_reject)
+- `status` - 状态 (pending, accepted, rejected, cancelled)
+- `from_user_id` - 发送者用户ID
+- `to_user_id` - 接收者用户ID
+- `team_id` - 相关战队ID
+- `match_id` - 相关约战ID
+- `message` - 通知消息内容
+- `read` - 是否已读
+
 ## 开发说明
 
-### 前端配置
+### Flutter 应用配置
 
-前端页面通过 `api.js` 调用后端 API，API 基础地址为 `/api`（相对路径）。
+Flutter 应用位于 `lol_league_app/` 目录，使用 Provider 进行状态管理，GoRouter 进行路由管理。
 
-如需修改 API 地址，编辑 `api.js` 中的 `API_BASE` 常量。
+主要依赖：
+- provider: 状态管理
+- dio: 网络请求
+- go_router: 路由管理
+- shared_preferences: 本地存储
+- flutter_secure_storage: 安全存储
+- excel: Excel 文件处理
 
 ### 数据库
 
-默认使用 SQLite 数据库 `lol-league.db`，数据库表会在首次启动时自动创建。
-
-如需重置数据库，删除 `backend/lol-league.db` 文件后重启服务。
+默认使用 SQLite 数据库 `backend/lol-league.db`，数据库表会在首次启动时自动创建。
 
 ## License
 

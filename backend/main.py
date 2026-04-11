@@ -2,7 +2,7 @@
 英雄联盟业余联赛平台 - FastAPI 后端
 Python + SQLite + 前端
 """
-from fastapi import FastAPI, Depends, HTTPException, Query, Request
+from fastapi import FastAPI, Depends, HTTPException, Query, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, Response as HttpResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,8 +17,9 @@ import models
 from schemas import (
     UserCreate, UserLogin, UserResponse,
     PlayerCreate, PlayerResponse,
-    TeamCreate, TeamUpdate, TeamResponse, TeamDetailResponse,
+    TeamCreate, TeamUpdate, TeamInviteRequest, TeamResponse, TeamDetailResponse,
     MatchCreate, MatchAccept, MatchReviewRequest, MatchScreenshotUpload, MatchResultSubmit, MatchResponse,
+    NotificationCreate, NotificationUpdate, NotificationResponse,
     Response, ListResponse
 )
 from auth import (
@@ -46,6 +47,29 @@ def run_migrations():
             db.execute(text("ALTER TABLE matches ADD COLUMN reviewed_at DATETIME"))
         if "reject_reason" not in column_names:
             db.execute(text("ALTER TABLE matches ADD COLUMN reject_reason TEXT DEFAULT ''"))
+
+        # 检查 notifications 表是否存在
+        result = db.execute(text("PRAGMA table_info(notifications)")).fetchall()
+        notif_column_names = [row[1] for row in result]
+        if not notif_column_names:
+            # notifications 表不存在，创建它
+            db.execute(text("""
+                CREATE TABLE notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    type VARCHAR(50) NOT NULL,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    from_user_id INTEGER NOT NULL REFERENCES users(id),
+                    from_player_id INTEGER REFERENCES players(id),
+                    to_user_id INTEGER NOT NULL REFERENCES users(id),
+                    to_player_id INTEGER REFERENCES players(id),
+                    team_id INTEGER REFERENCES teams(id),
+                    match_id INTEGER REFERENCES matches(id),
+                    message TEXT DEFAULT '',
+                    read BOOLEAN DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
         db.commit()
     except Exception as e:
         db.rollback()
@@ -61,6 +85,36 @@ app = FastAPI(
     description="电竞平台后端服务",
     version="1.0.0"
 )
+
+# 启动时创建管理员账号
+@app.on_event("startup")
+def create_admin_user():
+    """启动时创建默认管理员账号"""
+    db = SessionLocal()
+    try:
+        # 检查管理员是否已存在
+        admin = db.query(models.User).filter(models.User.username == "pener").first()
+        if not admin:
+            # 创建管理员
+            admin = models.User(
+                username="pener",
+                hashed_password=get_password_hash("pener123"),
+                is_admin=True
+            )
+            db.add(admin)
+            db.commit()
+            print("管理员账号已创建: pener / pener123")
+        else:
+            # 确保已有账号是管理员
+            if not admin.is_admin:
+                admin.is_admin = True
+                db.commit()
+                print("已将 pener 设为管理员")
+    except Exception as e:
+        db.rollback()
+        print(f"管理员创建警告: {e}")
+    finally:
+        db.close()
 
 # CORS 配置
 app.add_middleware(
@@ -194,6 +248,7 @@ async def get_me(current_user: models.User = Depends(get_current_user), db: Sess
 async def get_players(
     region: Optional[str] = None,
     position: Optional[str] = None,
+    teamless: Optional[bool] = None,
     db: Session = Depends(get_db)
 ):
     """获取所有选手"""
@@ -206,6 +261,8 @@ async def get_players(
         )
     if position:
         query = query.filter(models.Player.position == position)
+    if teamless is True:
+        query = query.filter(models.Player.team_id == None)
 
     players = query.all()
     player_list = [{
@@ -250,9 +307,11 @@ async def get_current_player(
         data={"player": {
             "id": player.id,
             "userId": player.user_id,
+            "teamId": player.team_id,
             "matchName": player.match_name,
             "gameId": player.game_id or "",
             "regionGroup": player.region_group,
+            "regionSmall": player.region_small or "",
             "position": player.position,
             "onlineTime": player.online_time or "",
             "bio": player.bio or "",
@@ -376,6 +435,44 @@ async def get_mvp_ranking(db: Session = Depends(get_db)):
     } for p in players[:10]])
 
 
+@app.put("/api/players/{player_id}/stats", response_model=Response)
+async def update_player_stats(
+    player_id: int,
+    stats_data: dict = Body(...),
+    current_user: models.User = Depends(admin_required),
+    db: Session = Depends(get_db)
+):
+    """更新选手统计数据（需管理员权限）"""
+    player = db.query(models.Player).filter(models.Player.id == player_id).first()
+    if not player:
+        return Response(success=False, message="选手不存在")
+
+    # 更新统计字段
+    if 'wins' in stats_data:
+        player.wins = stats_data['wins']
+    if 'losses' in stats_data:
+        player.losses = stats_data['losses']
+    if 'kills' in stats_data:
+        player.kills = stats_data['kills']
+    if 'deaths' in stats_data:
+        player.deaths = stats_data['deaths']
+    if 'assists' in stats_data:
+        player.assists = stats_data['assists']
+    if 'mvpCount' in stats_data:
+        player.mvp_count = stats_data['mvpCount']
+    if 'gamesPlayed' in stats_data:
+        player.games_played = stats_data['gamesPlayed']
+    if 'winStreak' in stats_data:
+        player.win_streak = stats_data['winStreak']
+    if 'winRate' in stats_data:
+        player.win_rate = stats_data['winRate']
+    if 'kda' in stats_data:
+        player.kda = stats_data['kda']
+
+    db.commit()
+    return Response(success=True, message="选手数据已更新")
+
+
 # ==================== 战队接口 ====================
 @app.get("/api/teams", response_model=ListResponse)
 async def get_teams(region: Optional[str] = None, db: Session = Depends(get_db)):
@@ -486,6 +583,11 @@ async def create_team(
     }})
 
 
+def is_same_region_group(player_region: str, team_region: str) -> bool:
+    """检查选手和战队是否在同一大区"""
+    return player_region == team_region
+
+
 @app.post("/api/teams/{team_id}/recruit", response_model=Response)
 async def join_team(
     team_id: int,
@@ -504,13 +606,99 @@ async def join_team(
     if not team:
         return Response(success=False, message="战队不存在")
 
+    # 检查是否在同一大区
+    if not is_same_region_group(player.region_group, team.region_group):
+        return Response(success=False, message="只能加入同一大区的战队")
+
     if len(db.query(models.Player).filter(models.Player.team_id == team_id).all()) >= 10:
         return Response(success=False, message="战队已满员")
 
-    player.team_id = team_id
+    # 发送入队申请通知给队长
+    notification = models.Notification(
+        type="team_apply",
+        status="pending",
+        from_user_id=current_user.id,
+        from_player_id=player.id,
+        to_user_id=db.query(models.Player).filter(models.Player.id == team.captain_id).first().user_id if team.captain_id else 0,
+        to_player_id=team.captain_id,
+        team_id=team_id,
+        message=f"选手 {player.match_name} 申请加入【{team.name}】"
+    )
+    db.add(notification)
     db.commit()
 
-    return Response(success=True, message="加入战队成功")
+    return Response(success=True, message="入队申请已发送，等待队长审批")
+
+
+@app.post("/api/teams/{team_id}/invite", response_model=Response)
+async def invite_player(
+    team_id: int,
+    invite_data: TeamInviteRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """队长邀请选手加入战队"""
+    player_id = invite_data.playerId
+    print(f"DEBUG: invite_player called - team_id={team_id}, player_id={player_id}, user_id={current_user.id}")
+
+    # 检查当前用户是否为队长
+    player = db.query(models.Player).filter(models.Player.user_id == current_user.id).first()
+    if not player:
+        print("DEBUG: player not found for current user")
+        return Response(success=False, message="只有队长可以邀请选手")
+
+    print(f"DEBUG: current user's player id={player.id}, team_id={player.team_id}")
+
+    team = db.query(models.Team).filter(models.Team.id == team_id).first()
+    if not team:
+        print("DEBUG: team not found")
+        return Response(success=False, message="战队不存在")
+
+    print(f"DEBUG: team captain_id={team.captain_id}, player.id={player.id}")
+
+    if team.captain_id != player.id:
+        print("DEBUG: user is not captain")
+        return Response(success=False, message="只有队长可以邀请选手")
+
+    # 检查要邀请的选手是否存在
+    target_player = db.query(models.Player).filter(models.Player.id == player_id).first()
+    if not target_player:
+        print("DEBUG: target player not found")
+        return Response(success=False, message="选手不存在")
+
+    print(f"DEBUG: target player found - team_id={target_player.team_id}")
+
+    if target_player.team_id is not None:
+        print("DEBUG: target player already in a team")
+        return Response(success=False, message="该选手已在其他战队")
+
+    member_count = len(db.query(models.Player).filter(models.Player.team_id == team_id).all())
+    print(f"DEBUG: current member count={member_count}")
+    if member_count >= 10:
+        print("DEBUG: team is full")
+        return Response(success=False, message="战队已满员")
+
+    # 检查是否在同一大区
+    if not is_same_region_group(target_player.region_group, team.region_group):
+        print("DEBUG: region mismatch")
+        return Response(success=False, message="只能邀请同一大区的选手")
+
+    print("DEBUG: all checks passed, sending invite notification")
+    # 创建通知
+    notification = models.Notification(
+        type="team_invite",
+        status="pending",
+        from_user_id=current_user.id,
+        from_player_id=player.id,
+        to_user_id=target_player.user_id,
+        to_player_id=target_player.id,
+        team_id=team_id,
+        message=f"【{team.name}】队长邀请你加入战队"
+    )
+    db.add(notification)
+    db.commit()
+
+    return Response(success=True, message="邀请已发送，等待选手确认")
 
 
 @app.post("/api/teams/{team_id}/leave", response_model=Response)
@@ -532,6 +720,117 @@ async def leave_team(
     db.commit()
 
     return Response(success=True, message="退出战队成功")
+
+
+@app.post("/api/teams/{team_id}/kick", response_model=Response)
+async def kick_player(
+    team_id: int,
+    kick_data: TeamInviteRequest,  # 复用 TeamInviteRequest，因为格式相同
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """队长移除队员"""
+    player_id = kick_data.playerId
+    print(f"DEBUG: kick_player called - team_id={team_id}, player_id={player_id}, user_id={current_user.id}")
+
+    # 检查当前用户是否为队长
+    player = db.query(models.Player).filter(models.Player.user_id == current_user.id).first()
+    if not player:
+        print("DEBUG: player not found for current user")
+        return Response(success=False, message="只有队长可以移除队员")
+
+    team = db.query(models.Team).filter(models.Team.id == team_id).first()
+    if not team:
+        print("DEBUG: team not found")
+        return Response(success=False, message="战队不存在")
+
+    print(f"DEBUG: team captain_id={team.captain_id}, player.id={player.id}")
+    if team.captain_id != player.id:
+        print("DEBUG: user is not captain")
+        return Response(success=False, message="只有队长可以移除队员")
+
+    # 检查要移除的选手是否在当前战队
+    target_player = db.query(models.Player).filter(models.Player.id == player_id).first()
+    if not target_player:
+        print("DEBUG: target player not found")
+        return Response(success=False, message="选手不存在")
+
+    print(f"DEBUG: target player team_id={target_player.team_id}")
+    if target_player.team_id != team_id:
+        return Response(success=False, message="该选手不在你的战队中")
+
+    # 不能移除自己（队长）
+    if target_player.id == team.captain_id:
+        return Response(success=False, message="不能移除自己，请先转让队长或解散战队")
+
+    print("DEBUG: removing player from team")
+    target_player.team_id = None
+    db.commit()
+
+    return Response(success=True, message="已移除队员")
+
+
+@app.put("/api/teams/{team_id}", response_model=Response)
+async def update_team(
+    team_id: int,
+    team_data: TeamUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """更新战队信息（仅队长）"""
+    team = db.query(models.Team).filter(models.Team.id == team_id).first()
+    if not team:
+        return Response(success=False, message="战队不存在")
+
+    player = db.query(models.Player).filter(models.Player.user_id == current_user.id).first()
+    if not player or player.id != team.captain_id:
+        return Response(success=False, message="只有队长可以修改战队信息")
+
+    if team_data.name is not None:
+        team.name = team_data.name
+    if team_data.logo is not None:
+        team.logo = team_data.logo
+    if team_data.description is not None:
+        team.description = team_data.description
+    if team_data.region_group is not None:
+        print(f"DEBUG: updating region_group to: {team_data.region_group}")
+        team.region_group = team_data.region_group
+    if team_data.region_small is not None:
+        print(f"DEBUG: updating region_small to: {team_data.region_small}")
+        team.region_small = team_data.region_small
+
+    print(f"DEBUG: team.region_group before commit: {team.region_group}")
+    print(f"DEBUG: team.region_small before commit: {team.region_small}")
+    db.commit()
+    db.refresh(team)
+
+    return Response(success=True, message="战队信息已更新")
+
+
+@app.put("/api/teams/{team_id}/stats", response_model=Response)
+async def update_team_stats(
+    team_id: int,
+    stats_data: dict = Body(...),
+    current_user: models.User = Depends(admin_required),
+    db: Session = Depends(get_db)
+):
+    """更新战队统计数据（需管理员权限）"""
+    team = db.query(models.Team).filter(models.Team.id == team_id).first()
+    if not team:
+        return Response(success=False, message="战队不存在")
+
+    # 更新统计字段
+    if 'wins' in stats_data:
+        team.wins = stats_data['wins']
+    if 'losses' in stats_data:
+        team.losses = stats_data['losses']
+    if 'score' in stats_data:
+        team.score = stats_data['score']
+    if 'winStreak' in stats_data:
+        team.win_streak = stats_data['winStreak']
+
+    db.commit()
+    return Response(success=True, message="战队数据已更新")
 
 
 @app.delete("/api/teams/{team_id}", response_model=Response)
@@ -705,6 +1004,28 @@ async def accept_match(
 
     match.opponent_id = player.team_id
     match.status = "已约战"
+
+    # 发送接受约战通知给发起方
+    opponent_team = db.query(models.Team).filter(models.Team.id == player.team_id).first()
+    original_team = db.query(models.Team).filter(models.Team.id == match.team_id).first()
+
+    # 找到发起方的队长
+    if original_team:
+        captain_player = db.query(models.Player).filter(models.Player.id == original_team.captain_id).first()
+        if captain_player:
+            notification = models.Notification(
+                type="match_accept",
+                status="pending",
+                from_user_id=current_user.id,
+                from_player_id=player.id,
+                to_user_id=captain_player.user_id,
+                to_player_id=captain_player.id,
+                team_id=player.team_id,
+                match_id=match.id,
+                message=f"【{opponent_team.name if opponent_team else '战队'}】已接受你们的约战挑战"
+            )
+            db.add(notification)
+
     db.commit()
 
     return Response(success=True, message="应战成功")
@@ -749,8 +1070,37 @@ async def review_match(
         match.status = "待应战"
         match.reviewed_by = current_user.id
         match.reviewed_at = datetime.utcnow()
+
+        # 发送约战邀请通知给所有战队（公开约战，任何队伍都可以应战）
+        # 如果约战是对特定队伍发的，可以通过 opponent_id 指定
+        # 这里向所有战队发送公开约战通知
+        all_players = db.query(models.Player).filter(
+            models.Player.team_id != match.team_id,
+            models.Player.team_id != None
+        ).all()
+
+        from_player = db.query(models.Player).filter(models.Player.user_id == current_user.id).first()
+        team = db.query(models.Team).filter(models.Team.id == match.team_id).first()
+
+        for p in all_players:
+            # 只通知战队队长
+            team_check = db.query(models.Team).filter(models.Team.id == p.team_id).first()
+            if team_check and team_check.captain_id == p.id:
+                notification = models.Notification(
+                    type="match_invite",
+                    status="pending",
+                    from_user_id=current_user.id,
+                    from_player_id=from_player.id if from_player else None,
+                    to_user_id=p.user_id,
+                    to_player_id=p.id,
+                    team_id=match.team_id,
+                    match_id=match.id,
+                    message=f"【{team.name if team else '战队'}】发起约战挑战，模式{match.mode}，时间{match.time}"
+                )
+                db.add(notification)
+
         db.commit()
-        return Response(success=True, message="约战审核通过")
+        return Response(success=True, message="约战审核通过，已向其他战队发送约战通知")
     elif review_data.action == "reject":
         match.status = "未通过"
         match.reviewed_by = current_user.id
@@ -901,7 +1251,7 @@ async def get_users(
 @app.put("/api/users/{user_id}/admin", response_model=Response)
 async def set_admin(
     user_id: int,
-    is_admin: bool = True,
+    request_data: dict = Body(...),
     current_user: models.User = Depends(admin_required),
     db: Session = Depends(get_db)
 ):
@@ -910,10 +1260,37 @@ async def set_admin(
     if not user:
         return Response(success=False, message="用户不存在")
 
+    is_admin = request_data.get('isAdmin', True)
     user.is_admin = is_admin
     db.commit()
 
     return Response(success=True, message=f"{'设为' if is_admin else '取消'}管理员成功")
+
+
+@app.delete("/api/users/{user_id}", response_model=Response)
+async def delete_user(
+    user_id: int,
+    current_user: models.User = Depends(admin_required),
+    db: Session = Depends(get_db)
+):
+    """删除用户（需管理员权限）"""
+    # 不能删除自己
+    if user_id == current_user.id:
+        return Response(success=False, message="不能删除自己")
+
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        return Response(success=False, message="用户不存在")
+
+    # 删除关联的选手数据
+    player = db.query(models.Player).filter(models.Player.user_id == user_id).first()
+    if player:
+        db.delete(player)
+
+    db.delete(user)
+    db.commit()
+
+    return Response(success=True, message="用户已删除")
 
 
 # ==================== 统计接口 ====================
@@ -979,6 +1356,282 @@ async def clear_results(
     db.commit()
 
     return Response(success=True, message="战绩已清空")
+
+
+# ==================== 通知接口 ====================
+@app.post("/api/notifications", response_model=Response)
+async def create_notification(
+    notification_data: NotificationCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """创建通知（邀请/申请）"""
+    player = db.query(models.Player).filter(models.Player.user_id == current_user.id).first()
+    if not player:
+        return Response(success=False, message="请先创建选手身份")
+
+    to_user = db.query(models.User).filter(models.User.id == notification_data.toUserId).first()
+    if not to_user:
+        return Response(success=False, message="目标用户不存在")
+
+    to_player = db.query(models.Player).filter(models.Player.user_id == to_user.id).first()
+
+    # 构建消息
+    message = notification_data.message
+    if not message:
+        if notification_data.type == "team_invite":
+            team = db.query(models.Team).filter(models.Team.id == notification_data.teamId).first()
+            message = f"【{team.name if team else '战队'}】队长邀请你加入战队"
+        elif notification_data.type == "team_apply":
+            team = db.query(models.Team).filter(models.Team.id == notification_data.teamId).first()
+            message = f"选手 {player.match_name} 申请加入【{team.name if team else '战队'}】"
+        elif notification_data.type == "match_invite":
+            team = db.query(models.Team).filter(models.Team.id == notification_data.teamId).first()
+            message = f"【{team.name if team else '战队'}】向你发起约战挑战"
+
+    notification = models.Notification(
+        type=notification_data.type,
+        status="pending",
+        from_user_id=current_user.id,
+        from_player_id=player.id,
+        to_user_id=notification_data.toUserId,
+        to_player_id=to_player.id if to_player else None,
+        team_id=notification_data.teamId,
+        match_id=notification_data.matchId,
+        message=message,
+        read=False
+    )
+    db.add(notification)
+    db.commit()
+    db.refresh(notification)
+
+    return Response(success=True, message="通知已发送", data={"notification": {
+        "id": notification.id,
+        "type": notification.type,
+        "status": notification.status
+    }})
+
+
+@app.get("/api/notifications", response_model=ListResponse)
+async def get_notifications(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的通知列表"""
+    notifications = db.query(models.Notification).filter(
+        models.Notification.to_user_id == current_user.id
+    ).order_by(models.Notification.created_at.desc()).limit(100).all()
+
+    notification_list = []
+    for n in notifications:
+        from_player = db.query(models.Player).filter(models.Player.id == n.from_player_id).first() if n.from_player_id else None
+        team = db.query(models.Team).filter(models.Team.id == n.team_id).first() if n.team_id else None
+        notification_list.append({
+            "id": n.id,
+            "type": n.type,
+            "status": n.status,
+            "fromUserId": n.from_user_id,
+            "fromPlayerId": n.from_player_id,
+            "fromPlayerName": from_player.match_name if from_player else None,
+            "toUserId": n.to_user_id,
+            "toPlayerId": n.to_player_id,
+            "teamId": n.team_id,
+            "teamName": team.name if team else None,
+            "matchId": n.match_id,
+            "message": n.message or "",
+            "read": n.read,
+            "createdAt": n.created_at.isoformat() if n.created_at else None
+        })
+
+    return ListResponse(success=True, data=notification_list)
+
+
+@app.get("/api/notifications/unread-count", response_model=Response)
+async def get_unread_count(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取未读通知数量"""
+    count = db.query(models.Notification).filter(
+        models.Notification.to_user_id == current_user.id,
+        models.Notification.read == False
+    ).count()
+
+    return Response(success=True, message="成功", data={"unreadCount": count})
+
+
+@app.get("/api/notifications/{notification_id}", response_model=Response)
+async def get_notification(
+    notification_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取单条通知"""
+    notification = db.query(models.Notification).filter(
+        models.Notification.id == notification_id,
+        models.Notification.to_user_id == current_user.id
+    ).first()
+
+    if not notification:
+        return Response(success=False, message="通知不存在")
+
+    from_player = db.query(models.Player).filter(models.Player.id == notification.from_player_id).first() if notification.from_player_id else None
+    team = db.query(models.Team).filter(models.Team.id == notification.team_id).first() if notification.team_id else None
+
+    return Response(success=True, message="成功", data={
+        "id": notification.id,
+        "type": notification.type,
+        "status": notification.status,
+        "fromUserId": notification.from_user_id,
+        "fromPlayerId": notification.from_player_id,
+        "fromPlayerName": from_player.match_name if from_player else None,
+        "toUserId": notification.to_user_id,
+        "toPlayerId": notification.to_player_id,
+        "teamId": notification.team_id,
+        "teamName": team.name if team else None,
+        "matchId": notification.match_id,
+        "message": notification.message or "",
+        "read": notification.read,
+        "createdAt": notification.created_at.isoformat() if notification.created_at else None
+    })
+
+
+@app.put("/api/notifications/{notification_id}", response_model=Response)
+async def update_notification(
+    notification_id: int,
+    update_data: NotificationUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """更新通知状态（接受/拒绝/已读）"""
+    notification = db.query(models.Notification).filter(
+        models.Notification.id == notification_id,
+        models.Notification.to_user_id == current_user.id
+    ).first()
+
+    if not notification:
+        return Response(success=False, message="通知不存在")
+
+    if notification.status != "pending":
+        return Response(success=False, message="该通知已处理")
+
+    notification.status = update_data.status
+
+    # 更新已读状态
+    if update_data.read is not None:
+        notification.read = update_data.read
+
+    # 处理业务逻辑
+    if update_data.status == "accepted":
+        if notification.type == "team_invite":
+            # 选手接受邀请，加入战队
+            player = db.query(models.Player).filter(models.Player.id == notification.to_player_id).first()
+            if player and notification.team_id:
+                team = db.query(models.Team).filter(models.Team.id == notification.team_id).first()
+                if team and not player.team_id:
+                    player.team_id = notification.team_id
+                    notification.message = f"你已加入【{team.name}】"
+        elif notification.type == "team_apply":
+            # 队长接受申请，选手加入战队
+            player = db.query(models.Player).filter(models.Player.id == notification.from_player_id).first()
+            if player and notification.team_id:
+                team = db.query(models.Team).filter(models.Team.id == notification.team_id).first()
+                if team and not player.team_id:
+                    player.team_id = notification.team_id
+                    notification.message = f"你的入队申请已通过，已加入【{team.name}】"
+        elif notification.type == "match_invite":
+            # 接受约战邀请
+            if notification.match_id:
+                match = db.query(models.Match).filter(models.Match.id == notification.match_id).first()
+                if match and match.status == "待应战":
+                    match.opponent_id = notification.team_id
+                    match.status = "已约战"
+                    notification.message = "已接受约战"
+        elif notification.type == "match_accept":
+            # 约战被接受
+            if notification.match_id:
+                match = db.query(models.Match).filter(models.Match.id == notification.match_id).first()
+                if match:
+                    match.status = "已约战"
+        elif notification.type == "match_reject":
+            # 约战被拒绝
+            if notification.match_id:
+                match = db.query(models.Match).filter(models.Match.id == notification.match_id).first()
+                if match:
+                    match.status = "已拒绝"
+    elif update_data.status == "rejected":
+        if notification.type == "team_invite":
+            notification.message = "你已拒绝加入该战队"
+        elif notification.type == "team_apply":
+            notification.message = "你的入队申请已被拒绝"
+        elif notification.type == "match_invite":
+            notification.message = "你已拒绝约战挑战"
+
+    db.commit()
+    db.refresh(notification)
+
+    return Response(success=True, message="操作成功", data={
+        "id": notification.id,
+        "status": notification.status,
+        "message": notification.message
+    })
+
+
+@app.delete("/api/notifications/{notification_id}", response_model=Response)
+async def delete_notification(
+    notification_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """删除通知"""
+    notification = db.query(models.Notification).filter(
+        models.Notification.id == notification_id,
+        models.Notification.to_user_id == current_user.id
+    ).first()
+
+    if not notification:
+        return Response(success=False, message="通知不存在")
+
+    db.delete(notification)
+    db.commit()
+
+    return Response(success=True, message="删除成功")
+
+
+@app.put("/api/notifications/{notification_id}/read", response_model=Response)
+async def mark_as_read(
+    notification_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """标记通知为已读"""
+    notification = db.query(models.Notification).filter(
+        models.Notification.id == notification_id,
+        models.Notification.to_user_id == current_user.id
+    ).first()
+
+    if not notification:
+        return Response(success=False, message="通知不存在")
+
+    notification.read = True
+    db.commit()
+
+    return Response(success=True, message="已标记为已读")
+
+
+@app.put("/api/notifications/read-all", response_model=Response)
+async def mark_all_as_read(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """标记所有通知为已读"""
+    db.query(models.Notification).filter(
+        models.Notification.to_user_id == current_user.id,
+        models.Notification.read == False
+    ).update({"read": True})
+    db.commit()
+
+    return Response(success=True, message="已全部标记为已读")
 
 
 if __name__ == "__main__":

@@ -54,6 +54,7 @@ class PlayerResponse(BaseModel):
 
     id: int
     userId: int
+    teamId: Optional[int] = None
     matchName: str
     gameId: str = ""
     regionGroup: str
@@ -89,6 +90,12 @@ class TeamUpdate(BaseModel):
     name: Optional[str] = None
     logo: Optional[str] = None
     description: Optional[str] = None
+    region_group: Optional[str] = None
+    region_small: Optional[str] = None
+
+
+class TeamInviteRequest(BaseModel):
+    playerId: int
 
 
 class TeamResponse(BaseModel):
@@ -177,3 +184,34 @@ class ListResponse(BaseModel):
     data: List[dict]
     total: Optional[int] = None
     hasMore: Optional[bool] = None
+
+
+# ==================== 通知相关 ====================
+class NotificationCreate(BaseModel):
+    type: str  # 通知类型: team_invite, team_apply, match_invite
+    toUserId: int
+    teamId: Optional[int] = None
+    matchId: Optional[int] = None
+    message: str = ""
+
+
+class NotificationUpdate(BaseModel):
+    status: str  # accepted, rejected, cancelled
+    read: Optional[bool] = None
+
+
+class NotificationResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    type: str
+    status: str
+    fromUserId: int
+    fromPlayerId: Optional[int] = None
+    toUserId: int
+    toPlayerId: Optional[int] = None
+    teamId: Optional[int] = None
+    matchId: Optional[int] = None
+    message: str
+    read: bool
+    createdAt: Optional[datetime] = None
