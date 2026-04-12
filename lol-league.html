@@ -1839,7 +1839,9 @@
     <script>
         // ==================== 全局数据 ====================
         const REGION_GROUPS = {
-            '独立大区': ['艾欧尼亚', '黑色玫瑰', '峡谷之巅'],
+            '艾欧尼亚': ['艾欧尼亚'],
+            '黑色玫瑰': ['黑色玫瑰'],
+            '峡谷之巅': ['峡谷之巅'],
             '联盟一区': ['祖安', '皮尔特沃夫', '巨神峰', '教育网', '男爵领域', '均衡教派', '影流', '守望之海'],
             '联盟二区': ['卡拉曼达', '暗影岛', '征服之海', '诺克萨斯', '战争学院', '雷瑟守备'],
             '联盟三区': ['班德尔城', '裁决之地', '水晶之痕', '钢铁烈阳', '皮城警备'],
@@ -2145,20 +2147,20 @@
 
         // 获取显示用的区域名称（同时显示大区和小区的格式）
         function getDisplayRegion(regionGroup, regionSmall) {
-            // 如果有小区名，直接用小区名和大区名拼接
-            if (regionSmall && SMALL_TO_LARGE_REGION[regionSmall]) {
-                return `${SMALL_TO_LARGE_REGION[regionSmall]} - ${regionSmall}`;
+            // 如果小区和大区相同（独立大区情况），直接显示
+            if (regionSmall && regionSmall === regionGroup) {
+                return regionGroup;
             }
-            // 如果是小区名（存在于映射中），直接显示
-            if (SMALL_TO_LARGE_REGION[regionGroup]) {
-                return `${SMALL_TO_LARGE_REGION[regionGroup]} - ${regionGroup}`;
+            // 如果有小区名且不等于大区，显示"大区 - 小区"格式
+            if (regionSmall && regionSmall !== regionGroup) {
+                return `${regionGroup} - ${regionSmall}`;
             }
-            // 如果是大区名（不存在于反向映射中），查找对应的小区
+            // 如果是大区名，查找对应的小区
             const largeRegion = REGION_GROUPS[regionGroup];
-            if (largeRegion && largeRegion.length > 0) {
+            if (largeRegion && largeRegion.length > 0 && largeRegion[0] !== regionGroup) {
                 return `${regionGroup} - ${largeRegion[0]}`;
             }
-            // 旧数据，直接返回
+            // 独立大区，直接返回
             return regionGroup || '';
         }
 
