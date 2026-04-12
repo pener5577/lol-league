@@ -1787,6 +1787,22 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- 数据管理面板 -->
+                <div class="glass-card rounded-xl p-6 fade-in-up">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center">
+                            <span class="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center mr-3">
+                                <i class="fas fa-database text-white"></i>
+                            </span>
+                            <h3 class="text-lg font-bold text-white">数据管理</h3>
+                        </div>
+                        <button onclick="showDataManagementModal()" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 text-cyan-400 text-sm transition-all">
+                            <i class="fas fa-edit mr-1"></i>管理数据
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-400">直接更新选手和战队的统计数据（胜场、负场、积分、MVP、KDA等）</p>
+                </div>
             </div>
         </section>
     </main>
@@ -3499,18 +3515,25 @@
                 const adminUserList = document.getElementById('adminUserList');
                 adminUserList.innerHTML = users.map(u => {
                     const player = players.find(p => p.userId === u.id);
+                    const isCurrentUser = currentUser && u.id === currentUser.id;
                     return `
                         <div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
                             <div class="flex items-center gap-2">
                                 <i class="fas fa-user text-gray-400"></i>
                                 <span class="text-sm text-white">${u.username}</span>
                                 ${u.isAdmin ? '<span class="px-1.5 py-0.5 rounded text-xs bg-purple-500/30 text-purple-400">管理员</span>' : ''}
+                                ${isCurrentUser ? '<span class="px-1.5 py-0.5 rounded text-xs bg-blue-500/30 text-blue-400">自己</span>' : ''}
                             </div>
                             <div class="flex items-center gap-1">
                                 ${player ? `<span class="text-xs text-gray-500">${player.matchName || '未设置ID'}</span>` : ''}
-                                <button onclick="toggleUserAdmin('${u.id}')" class="p-1 rounded hover:bg-white/10 text-xs ${u.isAdmin ? 'text-yellow-400' : 'text-gray-400'}">
+                                ${!isCurrentUser ? `
+                                <button onclick="toggleUserAdmin('${u.id}')" class="p-1 rounded hover:bg-white/10 text-xs ${u.isAdmin ? 'text-yellow-400' : 'text-gray-400'}" title="${u.isAdmin ? '取消管理员' : '设为管理员'}">
                                     <i class="fas ${u.isAdmin ? 'fa-user-slash' : 'fa-user-shield'}"></i>
                                 </button>
+                                <button onclick="deleteUser('${u.id}')" class="p-1 rounded hover:bg-red-500/20 text-xs text-red-400" title="删除用户">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                                ` : ''}
                             </div>
                         </div>
                     `;
@@ -3617,6 +3640,26 @@
                 renderAdmin();
             } catch (e) {
                 showToast('修改管理员权限失败', 'error');
+            }
+        }
+
+        async function deleteUser(userId) {
+            const currentUser = getCurrentUser();
+            if (currentUser && userId === currentUser.id) {
+                showToast('不能删除自己！', 'error');
+                return;
+            }
+
+            if (!confirm('确定要删除该用户吗？该操作不可恢复！')) {
+                return;
+            }
+
+            try {
+                await API.User.delete(userId);
+                showToast('用户已删除', 'success');
+                renderAdmin();
+            } catch (e) {
+                showToast('删除用户失败', 'error');
             }
         }
 
@@ -3844,6 +3887,177 @@
         function showModal(content) {
             document.getElementById('modalContent').innerHTML = content;
             document.getElementById('modal').classList.add('show');
+        }
+
+        // ==================== 数据管理弹窗 ====================
+        async function showDataManagementModal() {
+            try {
+                const [players, teams] = await Promise.all([
+                    API.Player.getAll(),
+                    API.Team.getAll()
+                ]);
+
+                const content = `
+                    <div class="text-center mb-6">
+                        <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center">
+                            <i class="fas fa-database text-2xl text-white"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold text-[#E8D085]">数据管理</h3>
+                        <p class="text-gray-400 text-sm mt-1">直接更新选手和战队统计数据</p>
+                    </div>
+
+                    <!-- Tab切换 -->
+                    <div class="flex mb-4 border-b border-white/10">
+                        <button onclick="switchDataTab('player')" id="dataTabPlayer" class="flex-1 py-2 text-center text-sm text-cyan-400 border-b-2 border-cyan-400">选手数据</button>
+                        <button onclick="switchDataTab('team')" id="dataTabTeam" class="flex-1 py-2 text-center text-sm text-gray-400 border-b-2 border-transparent hover:text-white">战队数据</button>
+                    </div>
+
+                    <!-- 选手数据 -->
+                    <div id="dataPlayerContent" class="space-y-3 max-h-80 overflow-y-auto">
+                        ${players.length === 0 ? '<div class="text-center text-gray-400 py-4">暂无选手数据</div>' : players.map(p => `
+                            <div class="bg-white/5 rounded-lg p-3">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-white font-medium">${p.matchName || '未设置'}</span>
+                                    <span class="text-xs text-gray-400">ID: ${p.id}</span>
+                                </div>
+                                <div class="grid grid-cols-4 gap-2 text-xs">
+                                    <div>
+                                        <label class="text-gray-400">胜场</label>
+                                        <input type="number" id="p_wins_${p.id}" value="${p.wins || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">负场</label>
+                                        <input type="number" id="p_losses_${p.id}" value="${p.losses || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">MVP</label>
+                                        <input type="number" id="p_mvp_${p.id}" value="${p.mvpCount || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">击杀</label>
+                                        <input type="number" id="p_kills_${p.id}" value="${p.kills || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">死亡</label>
+                                        <input type="number" id="p_deaths_${p.id}" value="${p.deaths || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">助攻</label>
+                                        <input type="number" id="p_assists_${p.id}" value="${p.assists || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">连胜</label>
+                                        <input type="number" id="p_winStreak_${p.id}" value="${p.winStreak || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                </div>
+                                <button onclick="updatePlayerStats(${p.id})" class="mt-2 w-full px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 text-cyan-400 rounded text-xs transition-all">
+                                    <i class="fas fa-save mr-1"></i>保存
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <!-- 战队数据 -->
+                    <div id="dataTeamContent" class="space-y-3 max-h-80 overflow-y-auto hidden">
+                        ${teams.length === 0 ? '<div class="text-center text-gray-400 py-4">暂无战队数据</div>' : teams.map(t => `
+                            <div class="bg-white/5 rounded-lg p-3">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-white font-medium">${t.name}</span>
+                                    <span class="text-xs text-gray-400">ID: ${t.id}</span>
+                                </div>
+                                <div class="grid grid-cols-4 gap-2 text-xs">
+                                    <div>
+                                        <label class="text-gray-400">胜场</label>
+                                        <input type="number" id="t_wins_${t.id}" value="${t.wins || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">负场</label>
+                                        <input type="number" id="t_losses_${t.id}" value="${t.losses || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">积分</label>
+                                        <input type="number" id="t_score_${t.id}" value="${t.score || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">连胜</label>
+                                        <input type="number" id="t_winStreak_${t.id}" value="${t.winStreak || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                </div>
+                                <button onclick="updateTeamStats(${t.id})" class="mt-2 w-full px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-400 rounded text-xs transition-all">
+                                    <i class="fas fa-save mr-1"></i>保存
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                showModal(content);
+            } catch (e) {
+                showToast('加载数据失败', 'error');
+            }
+        }
+
+        function switchDataTab(tab) {
+            const playerContent = document.getElementById('dataPlayerContent');
+            const teamContent = document.getElementById('dataTeamContent');
+            const playerTab = document.getElementById('dataTabPlayer');
+            const teamTab = document.getElementById('dataTabTeam');
+
+            if (tab === 'player') {
+                playerContent.classList.remove('hidden');
+                teamContent.classList.add('hidden');
+                playerTab.classList.add('text-cyan-400', 'border-cyan-400');
+                playerTab.classList.remove('text-gray-400', 'border-transparent');
+                teamTab.classList.remove('text-cyan-400', 'border-cyan-400');
+                teamTab.classList.add('text-gray-400', 'border-transparent');
+            } else {
+                playerContent.classList.add('hidden');
+                teamContent.classList.remove('hidden');
+                teamTab.classList.add('text-cyan-400', 'border-cyan-400');
+                teamTab.classList.remove('text-gray-400', 'border-transparent');
+                playerTab.classList.remove('text-cyan-400', 'border-cyan-400');
+                playerTab.classList.add('text-gray-400', 'border-transparent');
+            }
+        }
+
+        async function updatePlayerStats(playerId) {
+            const wins = parseInt(document.getElementById(`p_wins_${playerId}`).value) || 0;
+            const losses = parseInt(document.getElementById(`p_losses_${playerId}`).value) || 0;
+            const kills = parseInt(document.getElementById(`p_kills_${playerId}`).value) || 0;
+            const deaths = parseInt(document.getElementById(`p_deaths_${playerId}`).value) || 0;
+            const assists = parseInt(document.getElementById(`p_assists_${playerId}`).value) || 0;
+            const mvpCount = parseInt(document.getElementById(`p_mvp_${playerId}`).value) || 0;
+            const winStreak = parseInt(document.getElementById(`p_winStreak_${playerId}`).value) || 0;
+
+            const totalGames = wins + losses;
+            const winRate = totalGames > 0 ? Math.round(wins * 100 / totalGames) : 0;
+            const kda = deaths > 0 ? (kills + assists) / deaths : (kills + assists);
+
+            try {
+                await API.PlayerStats.update(playerId, {
+                    wins, losses, kills, deaths, assists, mvpCount, winStreak, winRate, kda
+                });
+                showToast('选手数据已更新', 'success');
+                renderAdmin();
+            } catch (e) {
+                showToast('更新失败', 'error');
+            }
+        }
+
+        async function updateTeamStats(teamId) {
+            const wins = parseInt(document.getElementById(`t_wins_${teamId}`).value) || 0;
+            const losses = parseInt(document.getElementById(`t_losses_${teamId}`).value) || 0;
+            const score = parseInt(document.getElementById(`t_score_${teamId}`).value) || 0;
+            const winStreak = parseInt(document.getElementById(`t_winStreak_${teamId}`).value) || 0;
+
+            try {
+                await API.TeamStats.update(teamId, {
+                    wins, losses, score, winStreak
+                });
+                showToast('战队数据已更新', 'success');
+                renderAdmin();
+            } catch (e) {
+                showToast('更新失败', 'error');
+            }
         }
 
         // ==================== 用户认证 ====================
