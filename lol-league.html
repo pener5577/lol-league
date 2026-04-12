@@ -792,6 +792,11 @@
                         </div>
                         <!-- 已登录状态 -->
                         <div id="userInfo" class="hidden flex items-center gap-3">
+                            <!-- 通知按钮 -->
+                            <button onclick="showNotificationModal()" class="relative p-2 rounded-lg hover:bg-white/10 transition-all text-gray-400 hover:text-white" title="通知">
+                                <i class="fas fa-bell"></i>
+                                <span id="notificationBadge" class="hidden absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">0</span>
+                            </button>
                             <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-[#C89B3C]/20">
                                 <i class="fas fa-user text-[#C89B3C]"></i>
                                 <span id="currentUsername" class="text-sm text-white font-medium"></span>
@@ -1901,6 +1906,8 @@
                             currentPlayer = result.data.player;
                             localStorage.setItem('lol_league_current_player_id', result.data.player.id);
                         }
+                        // 加载未读通知数
+                        loadUnreadCount();
                         return true;
                     }
                 } catch (e) {
@@ -4247,6 +4254,188 @@
                 mobileGuestMenu.classList.remove('hidden');
                 mobileUserInfo.classList.add('hidden');
                 adminTabBtnMobile.classList.add('hidden');
+            }
+        }
+
+        // ==================== 通知系统 ====================
+        let notifications = [];
+
+        function getNotificationTypeInfo(type) {
+            const typeMap = {
+                'team_invite': { icon: 'fa-user-plus', color: 'cyan', name: '战队邀请' },
+                'team_apply': { icon: 'fa-user-check', color: 'gold', name: '入队申请' },
+                'match_invite': { icon: 'fa-gamepad', color: 'purple', name: '约战邀请' },
+                'match_accept': { icon: 'fa-check-circle', color: 'green', name: '约战接受' },
+                'match_reject': { icon: 'fa-times-circle', color: 'red', name: '约战拒绝' }
+            };
+            return typeMap[type] || { icon: 'fa-bell', color: 'gray', name: '通知' };
+        }
+
+        function getNotificationStatusInfo(status) {
+            const statusMap = {
+                'pending': { name: '待处理', color: '#9CA3AF' },
+                'accepted': { name: '已接受', color: '#10B981' },
+                'rejected': { name: '已拒绝', color: '#EF4444' },
+                'cancelled': { name: '已取消', color: '#6B7280' }
+            };
+            return statusMap[status] || { name: status, color: '#9CA3AF' };
+        }
+
+        async function loadUnreadCount() {
+            if (!API.isLoggedIn()) return;
+            try {
+                const count = await API.Notification.getUnreadCount();
+                const badge = document.getElementById('notificationBadge');
+                if (count > 0) {
+                    badge.classList.remove('hidden');
+                    badge.classList.add('flex');
+                    badge.textContent = count > 99 ? '99+' : count;
+                } else {
+                    badge.classList.add('hidden');
+                    badge.classList.remove('flex');
+                }
+            } catch (e) {
+                console.error('获取未读数失败:', e);
+            }
+        }
+
+        async function showNotificationModal() {
+            if (!API.isLoggedIn()) {
+                showToast('请先登录', 'error');
+                return;
+            }
+
+            try {
+                notifications = await API.Notification.getAll();
+
+                const unreadNotifications = notifications.filter(n => !n.read);
+                const readNotifications = notifications.filter(n => n.read);
+
+                const content = `
+                    <div class="text-center mb-4">
+                        <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center">
+                            <i class="fas fa-bell text-2xl text-white"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-[#E8D085]">通知中心</h3>
+                        ${notifications.length > 0 ? `<p class="text-gray-400 text-sm mt-1">共 ${notifications.length} 条通知</p>` : ''}
+                    </div>
+
+                    ${notifications.length === 0 ? `
+                        <div class="text-center py-8">
+                            <i class="fas fa-bell-slash text-4xl text-gray-500 mb-3"></i>
+                            <p class="text-gray-400">暂无通知</p>
+                        </div>
+                    ` : `
+                        <div class="space-y-3 max-h-96 overflow-y-auto pr-1">
+                            ${unreadNotifications.length > 0 ? `
+                                <div class="text-xs text-gray-400 uppercase tracking-wider mb-2">未读 (${unreadNotifications.length})</div>
+                                ${unreadNotifications.map(n => buildNotificationItem(n)).join('')}
+                            ` : ''}
+                            ${readNotifications.length > 0 ? `
+                                <div class="text-xs text-gray-400 uppercase tracking-wider mb-2 mt-4">已读 (${readNotifications.length})</div>
+                                ${readNotifications.map(n => buildNotificationItem(n)).join('')}
+                            ` : ''}
+                        </div>
+                        ${notifications.length > 0 ? `
+                            <button onclick="markAllNotificationsAsRead()" class="w-full mt-4 py-2 text-sm text-cyan-400 hover:text-cyan-300 transition-all border border-cyan-500/30 rounded-lg hover:bg-cyan-500/10">
+                                全部标记为已读
+                            </button>
+                        ` : ''}
+                    `}
+                `;
+                showModal(content);
+                loadUnreadCount();
+            } catch (e) {
+                showToast('加载通知失败', 'error');
+            }
+        }
+
+        function buildNotificationItem(notification) {
+            const typeInfo = getNotificationTypeInfo(notification.type);
+            const statusInfo = getNotificationStatusInfo(notification.status);
+            const isPending = notification.status === 'pending';
+            const isUnread = !notification.read;
+
+            const colorMap = {
+                'cyan': '#06B6D4',
+                'gold': '#E8D085',
+                'purple': '#A855F7',
+                'green': '#10B981',
+                'red': '#EF4444',
+                'gray': '#9CA3AF'
+            };
+            const color = colorMap[typeInfo.color] || colorMap.gray;
+
+            return `
+                <div class="relative p-3 rounded-lg ${isUnread ? 'bg-white/10 border border-' + typeInfo.color + '-500/30' : 'bg-white/5'} transition-all">
+                    ${isUnread ? `<div class="absolute top-3 right-3 w-2 h-2 rounded-full" style="background: ${color}"></div>` : ''}
+                    <div class="flex items-start gap-3">
+                        <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style="background: ${color}20">
+                            <i class="fas ${typeInfo.icon}" style="color: ${color}"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="font-medium text-white text-sm">${typeInfo.name}</span>
+                                <span class="text-xs px-1.5 py-0.5 rounded" style="background: ${statusInfo.color}20; color: ${statusInfo.color}">${statusInfo.name}</span>
+                            </div>
+                            <p class="text-gray-300 text-sm leading-relaxed">${notification.message || '暂无描述'}</p>
+                            ${notification.createdAt ? `<p class="text-gray-500 text-xs mt-1">${formatTimeAgo(notification.createdAt)}</p>` : ''}
+                            ${isPending && (notification.type === 'team_invite' || notification.type === 'team_apply' || notification.type === 'match_invite') ? `
+                                <div class="flex gap-2 mt-2">
+                                    <button onclick="handleNotification('${notification.id}', 'accept')" class="flex-1 py-1.5 rounded text-xs font-medium bg-green-500/20 hover:bg-green-500/30 text-green-400 transition-all">
+                                        <i class="fas fa-check mr-1"></i>接受
+                                    </button>
+                                    <button onclick="handleNotification('${notification.id}', 'reject')" class="flex-1 py-1.5 rounded text-xs font-medium bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all">
+                                        <i class="fas fa-times mr-1"></i>拒绝
+                                    </button>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function formatTimeAgo(dateString) {
+            const date = new Date(dateString);
+            const now = new Date();
+            const seconds = Math.floor((now - date) / 1000);
+
+            if (seconds < 60) return '刚刚';
+            if (seconds < 3600) return Math.floor(seconds / 60) + '分钟前';
+            if (seconds < 86400) return Math.floor(seconds / 3600) + '小时前';
+            if (seconds < 604800) return Math.floor(seconds / 86400) + '天前';
+            return date.toLocaleDateString('zh-CN');
+        }
+
+        async function handleNotification(notificationId, action) {
+            try {
+                if (action === 'accept') {
+                    await API.Notification.accept(notificationId);
+                    showToast('已接受', 'success');
+                } else {
+                    await API.Notification.reject(notificationId);
+                    showToast('已拒绝', 'success');
+                }
+                showNotificationModal();
+                loadUnreadCount();
+                // 刷新当前tab数据
+                if (currentTab === 'teams') renderTeams();
+                if (currentTab === 'recruit') renderRecruit();
+                if (currentTab === 'battle') renderBattleList();
+            } catch (e) {
+                showToast('操作失败', 'error');
+            }
+        }
+
+        async function markAllNotificationsAsRead() {
+            try {
+                await Promise.all(notifications.filter(n => !n.read).map(n => API.Notification.markAsRead(n.id)));
+                showToast('已全部标记为已读', 'success');
+                showNotificationModal();
+                loadUnreadCount();
+            } catch (e) {
+                showToast('操作失败', 'error');
             }
         }
 
