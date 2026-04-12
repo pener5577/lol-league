@@ -168,6 +168,13 @@ const API = {
             });
         },
 
+        async invite(teamId, playerId) {
+            return request(`/teams/${teamId}/invite`, {
+                method: 'POST',
+                body: JSON.stringify({ playerId })
+            });
+        },
+
         async getScoreRanking() {
             const result = await request('/teams/rankings/score');
             return result.data || [];

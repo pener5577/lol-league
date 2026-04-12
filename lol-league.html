@@ -2739,6 +2739,7 @@
                     showToast('只有队长可以邀请选手！', 'error');
                     return;
                 }
+                await API.Team.invite(playerTeam.id, playerId);
                 showToast('邀请已发送！', 'success');
             } catch (e) {
                 showToast('邀请失败', 'error');
