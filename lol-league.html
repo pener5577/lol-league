@@ -3729,6 +3729,12 @@
                 const loserSelect = document.getElementById('resultLoserTeam');
                 winnerSelect.innerHTML = '<option value="">选择胜方战队</option>' + teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
                 loserSelect.innerHTML = '<option value="">选择负方战队</option>' + teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
+                // 绑定战绩录入的事件
+                const resultMatchSelect = document.getElementById('resultMatchSelect');
+                if (resultMatchSelect) resultMatchSelect.addEventListener('change', updatePlayerStatsInputs);
+                if (winnerSelect) winnerSelect.addEventListener('change', updatePlayerStatsInputs);
+                if (loserSelect) loserSelect.addEventListener('change', updatePlayerStatsInputs);
             } catch (e) {
                 console.error('加载管理员数据失败:', e);
                 showToast('加载数据失败', 'error');
