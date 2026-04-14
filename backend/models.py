@@ -121,3 +121,22 @@ class MatchResult(Base):
     player_stats = Column(Text, default="[]")  # JSON 存储选手战绩
     recorded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class Notification(Base):
+    """通知表"""
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    type = Column(String(50), nullable=False)  # 通知类型: team_invite, team_apply, match_invite, match_accept, match_reject
+    status = Column(String(20), default="pending")  # 状态: pending, accepted, rejected, cancelled
+    from_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    from_player_id = Column(Integer, ForeignKey("players.id"), nullable=True)
+    to_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    to_player_id = Column(Integer, ForeignKey("players.id"), nullable=True)
+    team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
+    match_id = Column(Integer, ForeignKey("matches.id"), nullable=True)
+    message = Column(Text, default="")
+    read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

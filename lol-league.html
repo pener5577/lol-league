@@ -792,6 +792,11 @@
                         </div>
                         <!-- 已登录状态 -->
                         <div id="userInfo" class="hidden flex items-center gap-3">
+                            <!-- 通知按钮 -->
+                            <button onclick="showNotificationModal()" class="relative p-2 rounded-lg hover:bg-white/10 transition-all text-gray-400 hover:text-white" title="通知">
+                                <i class="fas fa-bell"></i>
+                                <span id="notificationBadge" class="hidden absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">0</span>
+                            </button>
                             <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-[#C89B3C]/20">
                                 <i class="fas fa-user text-[#C89B3C]"></i>
                                 <span id="currentUsername" class="text-sm text-white font-medium"></span>
@@ -993,7 +998,7 @@
                     <i class="fas fa-broadcast-tower text-[#4A9BE5]"></i>
                     <span class="text-white">直播预告</span>
                 </h2>
-                <span class="text-sm text-[#C89B3C] flex items-center gap-2">
+                <span id="liveStatusBadge" class="text-sm text-[#C89B3C] flex items-center gap-2 hidden">
                     <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
                     正在直播
                 </span>
@@ -1787,6 +1792,22 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- 数据管理面板 -->
+                <div class="glass-card rounded-xl p-6 fade-in-up">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center">
+                            <span class="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center mr-3">
+                                <i class="fas fa-database text-white"></i>
+                            </span>
+                            <h3 class="text-lg font-bold text-white">数据管理</h3>
+                        </div>
+                        <button onclick="showDataManagementModal()" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 text-cyan-400 text-sm transition-all">
+                            <i class="fas fa-edit mr-1"></i>管理数据
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-400">直接更新选手和战队的统计数据（胜场、负场、积分、MVP、KDA等）</p>
+                </div>
             </div>
         </section>
     </main>
@@ -1818,7 +1839,9 @@
     <script>
         // ==================== 全局数据 ====================
         const REGION_GROUPS = {
-            '独立大区': ['艾欧尼亚', '黑色玫瑰', '峡谷之巅'],
+            '艾欧尼亚': ['艾欧尼亚'],
+            '黑色玫瑰': ['黑色玫瑰'],
+            '峡谷之巅': ['峡谷之巅'],
             '联盟一区': ['祖安', '皮尔特沃夫', '巨神峰', '教育网', '男爵领域', '均衡教派', '影流', '守望之海'],
             '联盟二区': ['卡拉曼达', '暗影岛', '征服之海', '诺克萨斯', '战争学院', '雷瑟守备'],
             '联盟三区': ['班德尔城', '裁决之地', '水晶之痕', '钢铁烈阳', '皮城警备'],
@@ -1885,6 +1908,8 @@
                             currentPlayer = result.data.player;
                             localStorage.setItem('lol_league_current_player_id', result.data.player.id);
                         }
+                        // 加载未读通知数
+                        loadUnreadCount();
                         return true;
                     }
                 } catch (e) {
@@ -2003,6 +2028,15 @@
                 }
                 matches = await API.Match.getAll({ status: '待应战' });
                 teams = await API.Team.getAll();
+                // 更新直播赛事计数
+                const liveCount = matches.filter(m => checkIsLivestream(m.time)).length;
+                document.getElementById('statLivestream').textContent = liveCount;
+                // 控制"正在直播"标识的显示
+                const liveStatusBadge = document.getElementById('liveStatusBadge');
+                if (liveStatusBadge) {
+                    if (liveCount > 0) liveStatusBadge.classList.remove('hidden');
+                    else liveStatusBadge.classList.add('hidden');
+                }
             } catch (error) {
                 console.log('API调用失败，使用本地数据');
                 matches = loadData('matches').filter(m => m.status === '待应战' || m.status === '已约战').slice(0, 6);
@@ -2046,9 +2080,9 @@
                         <div class="text-center">
                             <i class="fas ${team.logo} text-4xl text-esports-gold mb-3"></i>
                             <div class="font-bold text-lg">${team.name}</div>
-                            <div class="text-sm text-gray-400">${getDisplayRegion(team.regionGroup, team.regionSmall || team.name)} · ${team.city || '未知城市'}</div>
+                            <div class="text-sm text-gray-400">${getDisplayRegion(team.regionGroup, team.regionSmall)} · ${team.memberCount || team.members?.length || 0}人</div>
                             <div class="flex items-center justify-center gap-2 mt-2">
-                                <span class="px-2 py-0.5 rounded text-xs ${team.level === '王牌' ? 'badge-ace' : team.level === '精英' ? 'badge-elite' : 'badge-newbie'}">${team.level}</span>
+                                <span class="px-2 py-0.5 rounded text-xs ${team.level === '王牌' ? 'badge-ace' : team.level === '精英' ? 'badge-elite' : 'badge-newbie'}">${team.level || '新手'}</span>
                                 <span class="text-xs text-gray-400">${team.members?.length || 0}人</span>
                             </div>
                         </div>
@@ -2122,20 +2156,20 @@
 
         // 获取显示用的区域名称（同时显示大区和小区的格式）
         function getDisplayRegion(regionGroup, regionSmall) {
-            // 如果有小区名，直接用小区名和大区名拼接
-            if (regionSmall && SMALL_TO_LARGE_REGION[regionSmall]) {
-                return `${SMALL_TO_LARGE_REGION[regionSmall]} - ${regionSmall}`;
+            // 如果小区和大区相同（独立大区情况），直接显示
+            if (regionSmall && regionSmall === regionGroup) {
+                return regionGroup;
             }
-            // 如果是小区名（存在于映射中），直接显示
-            if (SMALL_TO_LARGE_REGION[regionGroup]) {
-                return `${SMALL_TO_LARGE_REGION[regionGroup]} - ${regionGroup}`;
+            // 如果有小区名且不等于大区，显示"大区 - 小区"格式
+            if (regionSmall && regionSmall !== regionGroup) {
+                return `${regionGroup} - ${regionSmall}`;
             }
-            // 如果是大区名（不存在于反向映射中），查找对应的小区
+            // 如果是大区名，查找对应的小区
             const largeRegion = REGION_GROUPS[regionGroup];
-            if (largeRegion && largeRegion.length > 0) {
+            if (largeRegion && largeRegion.length > 0 && largeRegion[0] !== regionGroup) {
                 return `${regionGroup} - ${largeRegion[0]}`;
             }
-            // 旧数据，直接返回
+            // 独立大区，直接返回
             return regionGroup || '';
         }
 
@@ -2202,7 +2236,7 @@
                 }
             }
 
-            const currentPlayerId = currentPlayer?._id || currentPlayer?.id || localStorage.getItem(STORAGE_KEYS.currentPlayerId);
+            const currentPlayerId = currentPlayer?._id || currentPlayer?.id || parseInt(localStorage.getItem(STORAGE_KEYS.currentPlayerId));
             const filterRegion = document.getElementById('filterRegion')?.value || '';
             const filterPosition = document.getElementById('filterPosition')?.value || '';
 
@@ -2222,11 +2256,17 @@
 
             playerListEl.innerHTML = filtered.map(player => {
                 const stats = player.stats || {};
-                const winRate = stats.gamesPlayed > 0 ? Math.round(stats.wins / stats.gamesPlayed * 100) : 0;
+                const gamesPlayed = stats.gamesPlayed || player.gamesPlayed || 0;
+                const wins = stats.wins || player.wins || 0;
+                const losses = stats.losses || player.losses || 0;
+                const winRate = gamesPlayed > 0 ? Math.round(wins / gamesPlayed * 100) : 0;
+                const kills = stats.kills || player.kills || 0;
+                const deaths = stats.deaths || player.deaths || 0;
+                const assists = stats.assists || player.assists || 0;
                 const isMe = player._id === currentPlayerId || player.id === currentPlayerId;
 
                 return `
-                    <div class="glass-card rounded-xl p-4 neon-border ${isMe ? 'ring-2 ring-esports-cyan' : ''}">
+                    <div onclick="viewPlayerDetail('${player.id}')" class="glass-card rounded-xl p-4 neon-border ${isMe ? 'ring-2 ring-esports-cyan' : ''} cursor-pointer hover:ring-2 hover:ring-esports-cyan/50 transition-all">
                         <div class="flex items-start justify-between">
                             <div>
                                 <div class="font-bold text-lg">${player.matchName || '未设置'}</div>
@@ -2234,13 +2274,14 @@
                             </div>
                             <div class="flex flex-col items-end gap-1">
                                 <span class="px-2 py-0.5 rounded text-xs bg-esports-darkBlue/50 ${POSITION_COLORS[player.position] || 'text-gray-400'}">${player.position || '未选择'}</span>
-                                <span class="px-2 py-0.5 rounded text-xs bg-white/10 text-gray-400">${getDisplayRegion(player.regionGroup, player.matchName)}</span>
+                                <span class="px-2 py-0.5 rounded text-xs bg-white/10 text-gray-400">${getDisplayRegion(player.regionGroup, player.regionSmall)}</span>
                             </div>
                         </div>
                         <div class="mt-3 pt-3 border-t border-white/10 flex items-center justify-between">
                             <div class="flex gap-4 text-sm">
                                 <span class="text-gray-400">胜率: <span class="text-green-400">${winRate}%</span></span>
-                                <span class="text-gray-400">KDA: <span class="text-esports-gold">${stats.kills || 0}/${stats.deaths || 0}/${stats.assists || 0}</span></span>
+                                <span class="text-gray-400">KDA: <span class="text-esports-gold">${kills}/${deaths}/${assists}</span></span>
+                                <span class="text-gray-400">MVP: <span class="text-purple-400">${stats.mvpCount || player.mvpCount || 0}次</span></span>
                             </div>
                             ${player.teamId ? `<span class="text-xs text-esports-cyan"><i class="fas fa-shield-alt mr-1"></i>战队成员</span>` : ''}
                         </div>
@@ -2248,6 +2289,111 @@
                     </div>
                 `;
             }).join('');
+        }
+
+        async function viewPlayerDetail(playerId) {
+            try {
+                const players = await API.Player.getAll();
+                const teams = await API.Team.getAll();
+                const player = players.find(p => p.id == playerId);
+                if (!player) {
+                    showToast('选手不存在', 'error');
+                    return;
+                }
+
+                const gamesPlayed = player.gamesPlayed || 0;
+                const wins = player.wins || 0;
+                const losses = player.losses || 0;
+                const winRate = gamesPlayed > 0 ? Math.round(wins / gamesPlayed * 100) : 0;
+                const team = player.teamId ? teams.find(t => t.id === player.teamId) : null;
+
+                showModal(`
+                    <div class="text-center mb-4">
+                        <div class="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-esports-cyan to-esports-blue flex items-center justify-center mb-3">
+                            <i class="fas fa-user text-3xl text-white"></i>
+                        </div>
+                        <h3 class="text-xl font-bold">${player.matchName || '未设置'}</h3>
+                        <div class="text-sm text-gray-400">${player.gameId || '未填写'}</div>
+                        <div class="flex items-center justify-center gap-2 mt-2">
+                            <span class="px-2 py-0.5 rounded text-xs ${POSITION_COLORS[player.position] || 'bg-white/10 text-gray-400'}">${player.position || '未选择'}</span>
+                            <span class="px-2 py-0.5 rounded text-xs bg-white/10 text-gray-400">${getDisplayRegion(player.regionGroup, player.regionSmall)}</span>
+                        </div>
+                    </div>
+                    ${player.bio ? `<div class="text-center text-sm text-gray-300 mb-4 italic">"${player.bio}"</div>` : ''}
+                    <!-- 选手统计 -->
+                    <div class="grid grid-cols-4 gap-2 mb-4 p-3 bg-white/5 rounded-lg">
+                        <div class="text-center">
+                            <div class="text-lg font-bold text-green-400">${winRate}%</div>
+                            <div class="text-xs text-gray-400">胜率</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-lg font-bold text-esports-cyan">${gamesPlayed}</div>
+                            <div class="text-xs text-gray-400">总场次</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-lg font-bold text-purple-400">${player.mvpCount || 0}</div>
+                            <div class="text-xs text-gray-400">MVP</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-lg font-bold text-esports-gold">${player.kda || '0.00'}</div>
+                            <div class="text-xs text-gray-400">KDA</div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 mb-4">
+                        <div class="text-center p-2 bg-white/5 rounded-lg">
+                            <div class="text-sm font-bold text-green-400">${wins}</div>
+                            <div class="text-xs text-gray-400">胜场</div>
+                        </div>
+                        <div class="text-center p-2 bg-white/5 rounded-lg">
+                            <div class="text-sm font-bold text-red-400">${losses}</div>
+                            <div class="text-xs text-gray-400">负场</div>
+                        </div>
+                        <div class="text-center p-2 bg-white/5 rounded-lg">
+                            <div class="text-sm font-bold text-orange-400">${player.winStreak || 0}</div>
+                            <div class="text-xs text-gray-400">连胜</div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 mb-4">
+                        <div class="text-center p-2 bg-white/5 rounded-lg">
+                            <div class="text-sm font-bold text-blue-400">${player.kills || 0}</div>
+                            <div class="text-xs text-gray-400">击杀</div>
+                        </div>
+                        <div class="text-center p-2 bg-white/5 rounded-lg">
+                            <div class="text-sm font-bold text-red-400">${player.deaths || 0}</div>
+                            <div class="text-xs text-gray-400">死亡</div>
+                        </div>
+                        <div class="text-center p-2 bg-white/5 rounded-lg">
+                            <div class="text-sm font-bold text-purple-400">${player.assists || 0}</div>
+                            <div class="text-xs text-gray-400">助攻</div>
+                        </div>
+                    </div>
+                    <!-- 战队信息 -->
+                    ${team ? `
+                        <div onclick="showTeamDetailModal('${team.id}')" class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 cursor-pointer hover:bg-white/10 transition-all">
+                            <div class="flex items-center gap-2">
+                                <i class="fas fa-shield-alt text-esports-gold"></i>
+                                <span class="text-sm text-gray-300">所属战队</span>
+                            </div>
+                            <span class="text-sm text-white">${team.name}</span>
+                        </div>
+                    ` : `
+                        <div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
+                            <div class="flex items-center gap-2">
+                                <i class="fas fa-shield-alt text-gray-400"></i>
+                                <span class="text-sm text-gray-400">所属战队</span>
+                            </div>
+                            <span class="text-sm text-gray-500">暂无</span>
+                        </div>
+                    `}
+                `);
+            } catch (e) {
+                showToast('获取选手详情失败', 'error');
+            }
+        }
+
+        async function showTeamDetailModal(teamId) {
+            closeModal();
+            setTimeout(() => viewTeamDetail(teamId), 100);
         }
 
         async function savePlayer() {
@@ -2325,7 +2471,7 @@
 
             try {
                 const teams = await API.Team.getAll();
-                const currentPlayerId = API.getPlayerId();
+                const currentPlayerId = parseInt(API.getPlayerId());
                 const players = await API.Player.getAll();
                 const myTeam = teams.find(t => t.members?.some(m => m.id === currentPlayerId));
 
@@ -2397,7 +2543,7 @@
                                     </div>
                                 </div>
                                 <div class="flex flex-col items-end gap-1">
-                                    <span class="px-2 py-0.5 rounded text-xs ${team.level === '王牌' ? 'badge-ace' : team.level === '精英' ? 'badge-elite' : 'badge-newbie'}">${team.level}</span>
+                                    <span class="px-2 py-0.5 rounded text-xs ${team.level === '王牌' ? 'badge-ace' : team.level === '精英' ? 'badge-elite' : 'badge-newbie'}">${team.level || '新手'}</span>
                                 </div>
                             </div>
                             <div class="flex items-center justify-between pt-3 border-t border-white/10">
@@ -2492,27 +2638,55 @@
         async function viewTeamDetail(id) {
             try {
                 const team = await API.Team.getById(id);
-                const currentPlayerId = API.getPlayerId();
+                const players = await API.Player.getAll();
+                const captain = players.find(p => p.id === team.captainId);
 
                 showModal(`
                     <div class="text-center mb-4">
-                        <i class="fas ${team.logo} text-5xl text-esports-gold mb-3"></i>
+                        <i class="fas ${team.logo || 'fa-shield-alt'} text-5xl text-esports-gold mb-3"></i>
                         <h3 class="text-xl font-bold">${team.name}</h3>
                         <div class="text-sm text-gray-400 mt-1">${getDisplayRegion(team.regionGroup, team.regionSmall)}</div>
                         <div class="flex items-center justify-center gap-2 mt-2">
-                            <span class="px-2 py-0.5 rounded text-xs ${team.level === '王牌' ? 'badge-ace' : team.level === '精英' ? 'badge-elite' : 'badge-newbie'}">${team.level}</span>
-                            <span class="px-2 py-0.5 rounded text-xs bg-white/10">${team.recruitStatus}</span>
+                            <span class="px-2 py-0.5 rounded text-xs ${team.level === '王牌' ? 'badge-ace' : team.level === '精英' ? 'badge-elite' : 'badge-newbie'}">${team.level || '普通'}</span>
+                            <span class="px-2 py-0.5 rounded text-xs bg-white/10">${team.recruitStatus || '开放招募'}</span>
                         </div>
                     </div>
                     <div class="text-center text-sm text-gray-300 mb-4">
                         ${team.description || '暂无宣言'}
+                    </div>
+                    <!-- 战队统计 -->
+                    <div class="grid grid-cols-4 gap-2 mb-4 p-3 bg-white/5 rounded-lg">
+                        <div class="text-center">
+                            <div class="text-lg font-bold text-green-400">${team.wins || 0}</div>
+                            <div class="text-xs text-gray-400">胜场</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-lg font-bold text-red-400">${team.losses || 0}</div>
+                            <div class="text-xs text-gray-400">负场</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-lg font-bold text-esports-gold">${team.score || 0}</div>
+                            <div class="text-xs text-gray-400">积分</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-lg font-bold text-orange-400">${team.winStreak || 0}</div>
+                            <div class="text-xs text-gray-400">连胜</div>
+                        </div>
+                    </div>
+                    <!-- 队长信息 -->
+                    <div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 mb-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-crown text-esports-gold"></i>
+                            <span class="text-sm text-gray-300">队长</span>
+                        </div>
+                        <span class="text-sm text-white">${captain?.matchName || '未知'}</span>
                     </div>
                     <div class="border-t border-white/10 pt-4">
                         <div class="text-sm text-gray-400 mb-2">队员列表 (${team.members?.length || 0}/10)</div>
                         <div class="space-y-2 max-h-48 overflow-y-auto">
                             ${(team.members || []).map(p => `
                                 <div class="flex items-center justify-between bg-white/5 rounded px-3 py-2">
-                                    <span>${p.matchName}</span>
+                                    <span>${p.matchName || '未知'}</span>
                                     <div class="flex gap-2">
                                         <span class="text-xs text-gray-400">${p.position || ''}</span>
                                         ${p.id === team.captainId ? '<span class="px-1.5 py-0.5 rounded text-xs bg-esports-gold/30 text-esports-gold">队长</span>' : ''}
@@ -2556,9 +2730,7 @@
         async function renderRecruit() {
             const filtersEl = document.getElementById('recruitFilters');
             const listEl = document.getElementById('recruitList');
-            const currentPlayerId = API.getPlayerId();
-
-            // 初始化招募页面的选区下拉框
+            const currentPlayerId = parseInt(API.getPlayerId());
             initRecruitRegionSelects();
 
             try {
@@ -2716,6 +2888,7 @@
                     showToast('只有队长可以邀请选手！', 'error');
                     return;
                 }
+                await API.Team.invite(playerTeam.id, playerId);
                 showToast('邀请已发送！', 'success');
             } catch (e) {
                 showToast('邀请失败', 'error');
@@ -2742,7 +2915,7 @@
             try {
                 const teams = await API.Team.getAll();
                 const matches = await API.Match.getAll();
-                const currentPlayerId = API.getPlayerId();
+                const currentPlayerId = parseInt(API.getPlayerId());
                 const playerTeam = teams.find(t => t.members?.some(m => m.id === currentPlayerId));
 
                 // 渲染我的约战
@@ -2783,7 +2956,7 @@
             try {
                 const teams = await API.Team.getAll();
                 const matches = await API.Match.getAll();
-                const currentPlayerId = API.getPlayerId();
+                const currentPlayerId = parseInt(API.getPlayerId());
                 const playerTeam = teams.find(t => t.members?.some(m => m.id === currentPlayerId));
                 const battleListEl = document.getElementById('battleList');
 
@@ -3002,7 +3175,7 @@
 
         // ==================== 战绩中心 ====================
         async function renderStats() {
-            const currentPlayerId = API.getPlayerId();
+            const currentPlayerId = parseInt(API.getPlayerId());
 
             try {
                 const [players, teams, matchData] = await Promise.all([
@@ -3013,7 +3186,7 @@
 
                 const currentPlayer = players.find(p => p.id === currentPlayerId);
                 const playerTeam = teams.find(t => t.members?.some(m => m.id === currentPlayerId));
-                const matchResults = matchData.data || [];
+                const matchResults = matchData.results || matchData.data || matchData || [];
 
                 // 个人战绩
                 const personalStatsEl = document.getElementById('personalStats');
@@ -3499,18 +3672,25 @@
                 const adminUserList = document.getElementById('adminUserList');
                 adminUserList.innerHTML = users.map(u => {
                     const player = players.find(p => p.userId === u.id);
+                    const isCurrentUser = currentUser && u.id === currentUser.id;
                     return `
                         <div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
                             <div class="flex items-center gap-2">
                                 <i class="fas fa-user text-gray-400"></i>
                                 <span class="text-sm text-white">${u.username}</span>
                                 ${u.isAdmin ? '<span class="px-1.5 py-0.5 rounded text-xs bg-purple-500/30 text-purple-400">管理员</span>' : ''}
+                                ${isCurrentUser ? '<span class="px-1.5 py-0.5 rounded text-xs bg-blue-500/30 text-blue-400">自己</span>' : ''}
                             </div>
                             <div class="flex items-center gap-1">
                                 ${player ? `<span class="text-xs text-gray-500">${player.matchName || '未设置ID'}</span>` : ''}
-                                <button onclick="toggleUserAdmin('${u.id}')" class="p-1 rounded hover:bg-white/10 text-xs ${u.isAdmin ? 'text-yellow-400' : 'text-gray-400'}">
+                                ${!isCurrentUser ? `
+                                <button onclick="toggleUserAdmin('${u.id}')" class="p-1 rounded hover:bg-white/10 text-xs ${u.isAdmin ? 'text-yellow-400' : 'text-gray-400'}" title="${u.isAdmin ? '取消管理员' : '设为管理员'}">
                                     <i class="fas ${u.isAdmin ? 'fa-user-slash' : 'fa-user-shield'}"></i>
                                 </button>
+                                <button onclick="deleteUser('${u.id}')" class="p-1 rounded hover:bg-red-500/20 text-xs text-red-400" title="删除用户">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                                ` : ''}
                             </div>
                         </div>
                     `;
@@ -3556,6 +3736,11 @@
                 const loserSelect = document.getElementById('resultLoserTeam');
                 winnerSelect.innerHTML = '<option value="">选择胜方战队</option>' + teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
                 loserSelect.innerHTML = '<option value="">选择负方战队</option>' + teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
+                // 绑定战绩录入的事件（使用onchange替代addEventListener避免重复绑定）
+                if (resultMatchSelect) resultMatchSelect.onchange = updatePlayerStatsInputs;
+                if (winnerSelect) winnerSelect.onchange = updatePlayerStatsInputs;
+                if (loserSelect) loserSelect.onchange = updatePlayerStatsInputs;
             } catch (e) {
                 console.error('加载管理员数据失败:', e);
                 showToast('加载数据失败', 'error');
@@ -3620,6 +3805,26 @@
             }
         }
 
+        async function deleteUser(userId) {
+            const currentUser = getCurrentUser();
+            if (currentUser && userId === currentUser.id) {
+                showToast('不能删除自己！', 'error');
+                return;
+            }
+
+            if (!confirm('确定要删除该用户吗？该操作不可恢复！')) {
+                return;
+            }
+
+            try {
+                await API.User.delete(userId);
+                showToast('用户已删除', 'success');
+                renderAdmin();
+            } catch (e) {
+                showToast('删除用户失败', 'error');
+            }
+        }
+
         async function approveMatch(matchId) {
             try {
                 await API.Match.review(matchId, 'approve');
@@ -3680,16 +3885,15 @@
                 return;
             }
 
-            // 构建选手战绩数据
+            // 构建选手战绩数据（通过id读取各选手输入框）
             const playerStats = [];
-            const statInputs = document.querySelectorAll('#playerStatsInputs .player-stat-row');
-            statInputs.forEach(row => {
-                const playerId = row.dataset.playerId;
-                const teamId = row.dataset.teamId;
-                const kills = parseInt(row.querySelector('.stat-kills').value) || 0;
-                const deaths = parseInt(row.querySelector('.stat-deaths').value) || 0;
-                const assists = parseInt(row.querySelector('.stat-assists').value) || 0;
-                playerStats.push({ playerId: parseInt(playerId), teamId: parseInt(teamId), kills, deaths, assists });
+            const killInputs = document.querySelectorAll('#playerStatsInputs input[id^="kills_"]');
+            killInputs.forEach(killInput => {
+                const playerId = killInput.id.replace('kills_', '');
+                const kills = parseInt(killInput.value) || 0;
+                const deaths = parseInt(document.getElementById(`deaths_${playerId}`)?.value) || 0;
+                const assists = parseInt(document.getElementById(`assists_${playerId}`)?.value) || 0;
+                playerStats.push({ playerId: parseInt(playerId), kills, deaths, assists });
             });
 
             try {
@@ -3707,7 +3911,7 @@
             }
         }
 
-        function updatePlayerStatsInputs() {
+        async function updatePlayerStatsInputs() {
             const matchId = document.getElementById('resultMatchSelect').value;
             const winnerId = document.getElementById('resultWinnerTeam').value;
             const loserId = document.getElementById('resultLoserTeam').value;
@@ -3718,20 +3922,71 @@
                 return;
             }
 
-            container.innerHTML = '<div class="text-xs text-gray-400 mb-2">选手战绩（选填）</div>';
+            try {
+                const [teams, players] = await Promise.all([
+                    API.Team.getAll(),
+                    API.Player.getAll()
+                ]);
 
-            // 这里简单处理，实际应获取约战中双方的选手列表
-            container.innerHTML += '<div class="text-xs text-gray-500 text-center py-2">战绩数据已提交（详细选手KDA可在管理后台查看）</div>';
+                const winnerTeam = teams.find(t => t.id == winnerId);
+                const loserTeam = teams.find(t => t.id == loserId);
+
+                let html = '<div class="text-xs text-gray-400 mb-3">选手战绩（选填，不填则不更新）</div>';
+
+                // 胜方选手
+                html += '<div class="mb-3"><h4 class="text-sm text-green-400 font-bold mb-2"><i class="fas fa-crown mr-1"></i>胜方选手</h4><div class="space-y-2">';
+                if (winnerTeam?.members?.length > 0) {
+                    winnerTeam.members.forEach(p => {
+                        html += `
+                            <div class="flex items-center gap-2 bg-green-500/10 rounded-lg px-3 py-2">
+                                <span class="text-sm text-green-300 flex-1">${p.matchName || '未知'}</span>
+                                <input type="number" id="kills_${p.id}" placeholder="击杀" class="w-16 bg-black/30 border border-green-500/30 rounded px-2 py-1 text-white text-xs text-center" min="0">
+                                <span class="text-gray-500">/</span>
+                                <input type="number" id="deaths_${p.id}" placeholder="死亡" class="w-16 bg-black/30 border border-green-500/30 rounded px-2 py-1 text-white text-xs text-center" min="0">
+                                <span class="text-gray-500">/</span>
+                                <input type="number" id="assists_${p.id}" placeholder="助攻" class="w-16 bg-black/30 border border-green-500/30 rounded px-2 py-1 text-white text-xs text-center" min="0">
+                            </div>
+                        `;
+                    });
+                } else {
+                    html += '<div class="text-xs text-gray-500 text-center py-2">暂无成员数据</div>';
+                }
+                html += '</div></div>';
+
+                // 败方选手
+                html += '<div><h4 class="text-sm text-red-400 font-bold mb-2"><i class="fas fa-skull mr-1"></i>败方选手</h4><div class="space-y-2">';
+                if (loserTeam?.members?.length > 0) {
+                    loserTeam.members.forEach(p => {
+                        html += `
+                            <div class="flex items-center gap-2 bg-red-500/10 rounded-lg px-3 py-2">
+                                <span class="text-sm text-red-300 flex-1">${p.matchName || '未知'}</span>
+                                <input type="number" id="kills_${p.id}" placeholder="击杀" class="w-16 bg-black/30 border border-red-500/30 rounded px-2 py-1 text-white text-xs text-center" min="0">
+                                <span class="text-gray-500">/</span>
+                                <input type="number" id="deaths_${p.id}" placeholder="死亡" class="w-16 bg-black/30 border border-red-500/30 rounded px-2 py-1 text-white text-xs text-center" min="0">
+                                <span class="text-gray-500">/</span>
+                                <input type="number" id="assists_${p.id}" placeholder="助攻" class="w-16 bg-black/30 border border-red-500/30 rounded px-2 py-1 text-white text-xs text-center" min="0">
+                            </div>
+                        `;
+                    });
+                } else {
+                    html += '<div class="text-xs text-gray-500 text-center py-2">暂无成员数据</div>';
+                }
+                html += '</div></div>';
+
+                container.innerHTML = html;
+            } catch (e) {
+                container.innerHTML = '<div class="text-xs text-gray-500 text-center py-2">加载选手数据失败</div>';
+            }
         }
 
-        // 绑定约战选择和战队选择的change事件
+        // 绑定约战选择和战队选择的change事件（页面加载时初始化）
         document.addEventListener('DOMContentLoaded', function() {
             const resultMatchSelect = document.getElementById('resultMatchSelect');
             const resultWinnerTeam = document.getElementById('resultWinnerTeam');
             const resultLoserTeam = document.getElementById('resultLoserTeam');
-            if (resultMatchSelect) resultMatchSelect.addEventListener('change', updatePlayerStatsInputs);
-            if (resultWinnerTeam) resultWinnerTeam.addEventListener('change', updatePlayerStatsInputs);
-            if (resultLoserTeam) resultLoserTeam.addEventListener('change', updatePlayerStatsInputs);
+            if (resultMatchSelect) resultMatchSelect.onchange = updatePlayerStatsInputs;
+            if (resultWinnerTeam) resultWinnerTeam.onchange = updatePlayerStatsInputs;
+            if (resultLoserTeam) resultLoserTeam.onchange = updatePlayerStatsInputs;
         });
 
         async function adminResetData() {
@@ -3844,6 +4099,177 @@
         function showModal(content) {
             document.getElementById('modalContent').innerHTML = content;
             document.getElementById('modal').classList.add('show');
+        }
+
+        // ==================== 数据管理弹窗 ====================
+        async function showDataManagementModal() {
+            try {
+                const [players, teams] = await Promise.all([
+                    API.Player.getAll(),
+                    API.Team.getAll()
+                ]);
+
+                const content = `
+                    <div class="text-center mb-6">
+                        <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center">
+                            <i class="fas fa-database text-2xl text-white"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold text-[#E8D085]">数据管理</h3>
+                        <p class="text-gray-400 text-sm mt-1">直接更新选手和战队统计数据</p>
+                    </div>
+
+                    <!-- Tab切换 -->
+                    <div class="flex mb-4 border-b border-white/10">
+                        <button onclick="switchDataTab('player')" id="dataTabPlayer" class="flex-1 py-2 text-center text-sm text-cyan-400 border-b-2 border-cyan-400">选手数据</button>
+                        <button onclick="switchDataTab('team')" id="dataTabTeam" class="flex-1 py-2 text-center text-sm text-gray-400 border-b-2 border-transparent hover:text-white">战队数据</button>
+                    </div>
+
+                    <!-- 选手数据 -->
+                    <div id="dataPlayerContent" class="space-y-3 max-h-80 overflow-y-auto">
+                        ${players.length === 0 ? '<div class="text-center text-gray-400 py-4">暂无选手数据</div>' : players.map(p => `
+                            <div class="bg-white/5 rounded-lg p-3">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-white font-medium">${p.matchName || '未设置'}</span>
+                                    <span class="text-xs text-gray-400">ID: ${p.id}</span>
+                                </div>
+                                <div class="grid grid-cols-4 gap-2 text-xs">
+                                    <div>
+                                        <label class="text-gray-400">胜场</label>
+                                        <input type="number" id="p_wins_${p.id}" value="${p.wins || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">负场</label>
+                                        <input type="number" id="p_losses_${p.id}" value="${p.losses || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">MVP</label>
+                                        <input type="number" id="p_mvp_${p.id}" value="${p.mvpCount || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">击杀</label>
+                                        <input type="number" id="p_kills_${p.id}" value="${p.kills || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">死亡</label>
+                                        <input type="number" id="p_deaths_${p.id}" value="${p.deaths || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">助攻</label>
+                                        <input type="number" id="p_assists_${p.id}" value="${p.assists || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">连胜</label>
+                                        <input type="number" id="p_winStreak_${p.id}" value="${p.winStreak || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                </div>
+                                <button onclick="updatePlayerStats(${p.id})" class="mt-2 w-full px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 text-cyan-400 rounded text-xs transition-all">
+                                    <i class="fas fa-save mr-1"></i>保存
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <!-- 战队数据 -->
+                    <div id="dataTeamContent" class="space-y-3 max-h-80 overflow-y-auto hidden">
+                        ${teams.length === 0 ? '<div class="text-center text-gray-400 py-4">暂无战队数据</div>' : teams.map(t => `
+                            <div class="bg-white/5 rounded-lg p-3">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-white font-medium">${t.name}</span>
+                                    <span class="text-xs text-gray-400">ID: ${t.id}</span>
+                                </div>
+                                <div class="grid grid-cols-4 gap-2 text-xs">
+                                    <div>
+                                        <label class="text-gray-400">胜场</label>
+                                        <input type="number" id="t_wins_${t.id}" value="${t.wins || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">负场</label>
+                                        <input type="number" id="t_losses_${t.id}" value="${t.losses || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">积分</label>
+                                        <input type="number" id="t_score_${t.id}" value="${t.score || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-400">连胜</label>
+                                        <input type="number" id="t_winStreak_${t.id}" value="${t.winStreak || 0}" class="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-white mt-1">
+                                    </div>
+                                </div>
+                                <button onclick="updateTeamStats(${t.id})" class="mt-2 w-full px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-400 rounded text-xs transition-all">
+                                    <i class="fas fa-save mr-1"></i>保存
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                showModal(content);
+            } catch (e) {
+                showToast('加载数据失败', 'error');
+            }
+        }
+
+        function switchDataTab(tab) {
+            const playerContent = document.getElementById('dataPlayerContent');
+            const teamContent = document.getElementById('dataTeamContent');
+            const playerTab = document.getElementById('dataTabPlayer');
+            const teamTab = document.getElementById('dataTabTeam');
+
+            if (tab === 'player') {
+                playerContent.classList.remove('hidden');
+                teamContent.classList.add('hidden');
+                playerTab.classList.add('text-cyan-400', 'border-cyan-400');
+                playerTab.classList.remove('text-gray-400', 'border-transparent');
+                teamTab.classList.remove('text-cyan-400', 'border-cyan-400');
+                teamTab.classList.add('text-gray-400', 'border-transparent');
+            } else {
+                playerContent.classList.add('hidden');
+                teamContent.classList.remove('hidden');
+                teamTab.classList.add('text-cyan-400', 'border-cyan-400');
+                teamTab.classList.remove('text-gray-400', 'border-transparent');
+                playerTab.classList.remove('text-cyan-400', 'border-cyan-400');
+                playerTab.classList.add('text-gray-400', 'border-transparent');
+            }
+        }
+
+        async function updatePlayerStats(playerId) {
+            const wins = parseInt(document.getElementById(`p_wins_${playerId}`).value) || 0;
+            const losses = parseInt(document.getElementById(`p_losses_${playerId}`).value) || 0;
+            const kills = parseInt(document.getElementById(`p_kills_${playerId}`).value) || 0;
+            const deaths = parseInt(document.getElementById(`p_deaths_${playerId}`).value) || 0;
+            const assists = parseInt(document.getElementById(`p_assists_${playerId}`).value) || 0;
+            const mvpCount = parseInt(document.getElementById(`p_mvp_${playerId}`).value) || 0;
+            const winStreak = parseInt(document.getElementById(`p_winStreak_${playerId}`).value) || 0;
+
+            const totalGames = wins + losses;
+            const winRate = totalGames > 0 ? Math.round(wins * 100 / totalGames) : 0;
+            const kda = deaths > 0 ? (kills + assists) / deaths : (kills + assists);
+
+            try {
+                await API.PlayerStats.update(playerId, {
+                    wins, losses, kills, deaths, assists, mvpCount, winStreak, winRate, kda
+                });
+                showToast('选手数据已更新', 'success');
+                renderAdmin();
+            } catch (e) {
+                showToast('更新失败', 'error');
+            }
+        }
+
+        async function updateTeamStats(teamId) {
+            const wins = parseInt(document.getElementById(`t_wins_${teamId}`).value) || 0;
+            const losses = parseInt(document.getElementById(`t_losses_${teamId}`).value) || 0;
+            const score = parseInt(document.getElementById(`t_score_${teamId}`).value) || 0;
+            const winStreak = parseInt(document.getElementById(`t_winStreak_${teamId}`).value) || 0;
+
+            try {
+                await API.TeamStats.update(teamId, {
+                    wins, losses, score, winStreak
+                });
+                showToast('战队数据已更新', 'success');
+                renderAdmin();
+            } catch (e) {
+                showToast('更新失败', 'error');
+            }
         }
 
         // ==================== 用户认证 ====================
@@ -4033,6 +4459,188 @@
                 mobileGuestMenu.classList.remove('hidden');
                 mobileUserInfo.classList.add('hidden');
                 adminTabBtnMobile.classList.add('hidden');
+            }
+        }
+
+        // ==================== 通知系统 ====================
+        let notifications = [];
+
+        function getNotificationTypeInfo(type) {
+            const typeMap = {
+                'team_invite': { icon: 'fa-user-plus', color: 'cyan', name: '战队邀请' },
+                'team_apply': { icon: 'fa-user-check', color: 'gold', name: '入队申请' },
+                'match_invite': { icon: 'fa-gamepad', color: 'purple', name: '约战邀请' },
+                'match_accept': { icon: 'fa-check-circle', color: 'green', name: '约战接受' },
+                'match_reject': { icon: 'fa-times-circle', color: 'red', name: '约战拒绝' }
+            };
+            return typeMap[type] || { icon: 'fa-bell', color: 'gray', name: '通知' };
+        }
+
+        function getNotificationStatusInfo(status) {
+            const statusMap = {
+                'pending': { name: '待处理', color: '#9CA3AF' },
+                'accepted': { name: '已接受', color: '#10B981' },
+                'rejected': { name: '已拒绝', color: '#EF4444' },
+                'cancelled': { name: '已取消', color: '#6B7280' }
+            };
+            return statusMap[status] || { name: status, color: '#9CA3AF' };
+        }
+
+        async function loadUnreadCount() {
+            if (!API.isLoggedIn()) return;
+            try {
+                const count = await API.Notification.getUnreadCount();
+                const badge = document.getElementById('notificationBadge');
+                if (count > 0) {
+                    badge.classList.remove('hidden');
+                    badge.classList.add('flex');
+                    badge.textContent = count > 99 ? '99+' : count;
+                } else {
+                    badge.classList.add('hidden');
+                    badge.classList.remove('flex');
+                }
+            } catch (e) {
+                console.error('获取未读数失败:', e);
+            }
+        }
+
+        async function showNotificationModal() {
+            if (!API.isLoggedIn()) {
+                showToast('请先登录', 'error');
+                return;
+            }
+
+            try {
+                notifications = await API.Notification.getAll();
+
+                const unreadNotifications = notifications.filter(n => !n.read);
+                const readNotifications = notifications.filter(n => n.read);
+
+                const content = `
+                    <div class="text-center mb-4">
+                        <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center">
+                            <i class="fas fa-bell text-2xl text-white"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-[#E8D085]">通知中心</h3>
+                        ${notifications.length > 0 ? `<p class="text-gray-400 text-sm mt-1">共 ${notifications.length} 条通知</p>` : ''}
+                    </div>
+
+                    ${notifications.length === 0 ? `
+                        <div class="text-center py-8">
+                            <i class="fas fa-bell-slash text-4xl text-gray-500 mb-3"></i>
+                            <p class="text-gray-400">暂无通知</p>
+                        </div>
+                    ` : `
+                        <div class="space-y-3 max-h-96 overflow-y-auto pr-1">
+                            ${unreadNotifications.length > 0 ? `
+                                <div class="text-xs text-gray-400 uppercase tracking-wider mb-2">未读 (${unreadNotifications.length})</div>
+                                ${unreadNotifications.map(n => buildNotificationItem(n)).join('')}
+                            ` : ''}
+                            ${readNotifications.length > 0 ? `
+                                <div class="text-xs text-gray-400 uppercase tracking-wider mb-2 mt-4">已读 (${readNotifications.length})</div>
+                                ${readNotifications.map(n => buildNotificationItem(n)).join('')}
+                            ` : ''}
+                        </div>
+                        ${notifications.length > 0 ? `
+                            <button onclick="markAllNotificationsAsRead()" class="w-full mt-4 py-2 text-sm text-cyan-400 hover:text-cyan-300 transition-all border border-cyan-500/30 rounded-lg hover:bg-cyan-500/10">
+                                全部标记为已读
+                            </button>
+                        ` : ''}
+                    `}
+                `;
+                showModal(content);
+                loadUnreadCount();
+            } catch (e) {
+                showToast('加载通知失败', 'error');
+            }
+        }
+
+        function buildNotificationItem(notification) {
+            const typeInfo = getNotificationTypeInfo(notification.type);
+            const statusInfo = getNotificationStatusInfo(notification.status);
+            const isPending = notification.status === 'pending';
+            const isUnread = !notification.read;
+
+            const colorMap = {
+                'cyan': '#06B6D4',
+                'gold': '#E8D085',
+                'purple': '#A855F7',
+                'green': '#10B981',
+                'red': '#EF4444',
+                'gray': '#9CA3AF'
+            };
+            const color = colorMap[typeInfo.color] || colorMap.gray;
+
+            return `
+                <div class="relative p-3 rounded-lg ${isUnread ? 'bg-white/10 border border-' + typeInfo.color + '-500/30' : 'bg-white/5'} transition-all">
+                    ${isUnread ? `<div class="absolute top-3 right-3 w-2 h-2 rounded-full" style="background: ${color}"></div>` : ''}
+                    <div class="flex items-start gap-3">
+                        <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style="background: ${color}20">
+                            <i class="fas ${typeInfo.icon}" style="color: ${color}"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="font-medium text-white text-sm">${typeInfo.name}</span>
+                                <span class="text-xs px-1.5 py-0.5 rounded" style="background: ${statusInfo.color}20; color: ${statusInfo.color}">${statusInfo.name}</span>
+                            </div>
+                            <p class="text-gray-300 text-sm leading-relaxed">${notification.message || '暂无描述'}</p>
+                            ${notification.createdAt ? `<p class="text-gray-500 text-xs mt-1">${formatTimeAgo(notification.createdAt)}</p>` : ''}
+                            ${isPending && (notification.type === 'team_invite' || notification.type === 'team_apply' || notification.type === 'match_invite') ? `
+                                <div class="flex gap-2 mt-2">
+                                    <button onclick="handleNotification('${notification.id}', 'accept')" class="flex-1 py-1.5 rounded text-xs font-medium bg-green-500/20 hover:bg-green-500/30 text-green-400 transition-all">
+                                        <i class="fas fa-check mr-1"></i>接受
+                                    </button>
+                                    <button onclick="handleNotification('${notification.id}', 'reject')" class="flex-1 py-1.5 rounded text-xs font-medium bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all">
+                                        <i class="fas fa-times mr-1"></i>拒绝
+                                    </button>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function formatTimeAgo(dateString) {
+            const date = new Date(dateString);
+            const now = new Date();
+            const seconds = Math.floor((now - date) / 1000);
+
+            if (seconds < 60) return '刚刚';
+            if (seconds < 3600) return Math.floor(seconds / 60) + '分钟前';
+            if (seconds < 86400) return Math.floor(seconds / 3600) + '小时前';
+            if (seconds < 604800) return Math.floor(seconds / 86400) + '天前';
+            return date.toLocaleDateString('zh-CN');
+        }
+
+        async function handleNotification(notificationId, action) {
+            try {
+                if (action === 'accept') {
+                    await API.Notification.accept(notificationId);
+                    showToast('已接受', 'success');
+                } else {
+                    await API.Notification.reject(notificationId);
+                    showToast('已拒绝', 'success');
+                }
+                showNotificationModal();
+                loadUnreadCount();
+                // 刷新当前tab数据
+                if (currentTab === 'teams') renderTeams();
+                if (currentTab === 'recruit') renderRecruit();
+                if (currentTab === 'battle') renderBattleList();
+            } catch (e) {
+                showToast('操作失败', 'error');
+            }
+        }
+
+        async function markAllNotificationsAsRead() {
+            try {
+                await Promise.all(notifications.filter(n => !n.read).map(n => API.Notification.markAsRead(n.id)));
+                showToast('已全部标记为已读', 'success');
+                showNotificationModal();
+                loadUnreadCount();
+            } catch (e) {
+                showToast('操作失败', 'error');
             }
         }
 

@@ -168,6 +168,13 @@ const API = {
             });
         },
 
+        async invite(teamId, playerId) {
+            return request(`/teams/${teamId}/invite`, {
+                method: 'POST',
+                body: JSON.stringify({ playerId })
+            });
+        },
+
         async getScoreRanking() {
             const result = await request('/teams/rankings/score');
             return result.data || [];
@@ -252,6 +259,66 @@ const API = {
                 method: 'PUT',
                 body: JSON.stringify({ isAdmin })
             });
+        },
+
+        async delete(userId) {
+            return request(`/users/${userId}`, {
+                method: 'DELETE'
+            });
+        }
+    },
+
+    // 选手统计更新
+    PlayerStats: {
+        async update(playerId, statsData) {
+            return request(`/players/${playerId}/stats`, {
+                method: 'PUT',
+                body: JSON.stringify(statsData)
+            });
+        }
+    },
+
+    // 战队统计更新
+    TeamStats: {
+        async update(teamId, statsData) {
+            return request(`/teams/${teamId}/stats`, {
+                method: 'PUT',
+                body: JSON.stringify(statsData)
+            });
+        }
+    },
+
+    // 通知相关
+    Notification: {
+        async getAll() {
+            const result = await request('/notifications');
+            return result.data || [];
+        },
+
+        async markAsRead(notificationId) {
+            return request(`/notifications/${notificationId}`, {
+                method: 'PUT',
+                body: JSON.stringify({ read: true })
+            });
+        },
+
+        async accept(notificationId) {
+            return request(`/notifications/${notificationId}`, {
+                method: 'PUT',
+                body: JSON.stringify({ status: 'accepted' })
+            });
+        },
+
+        async reject(notificationId) {
+            return request(`/notifications/${notificationId}`, {
+                method: 'PUT',
+                body: JSON.stringify({ status: 'rejected' })
+            });
+        },
+
+        async getUnreadCount() {
+            const result = await request('/notifications/unread-count');
+            return result.data?.count || 0;
         }
     },
 
