@@ -1,6 +1,6 @@
 class ApiConstants {
   // 模拟器访问使用电脑IP
-  static const String baseUrl = 'http://192.168.10.189:3000/api';
+  static const String baseUrl = 'http://192.168.1.3:3000/api';
 
   // 认证
   static const String register = '/auth/register';

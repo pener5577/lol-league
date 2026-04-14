@@ -24,19 +24,23 @@
 
 ### Web 端
 
-| 首页 | 约战大厅 | 排行榜 |
-|------|---------|--------|
-| ![首页](docs/screenshots/web-home.png) | ![约战大厅](docs/screenshots/web-battle.png) | ![排行榜](docs/screenshots/web-ranking.png) |
+| 首页 | 选手中心 | 战队中心 |
+|------|---------|---------|
+| ![首页](docs/screenshots/web-home.png) | ![选手中心](docs/screenshots/web-player.png) | ![战队中心](docs/screenshots/web-team.png) |
 
-| 选手中心 | 战队系统 | 管理后台 |
-|---------|---------|---------|
-| ![选手中心](docs/screenshots/web-player.png) | ![战队系统](docs/screenshots/web-team.png) | ![管理后台](docs/screenshots/web-admin.png) |
+| 招募大厅 | 约战区 | 战绩中心 |
+|---------|--------|---------|
+| ![招募大厅](docs/screenshots/web-recruit.png) | ![约战区](docs/screenshots/web-battle.png) | ![战绩中心](docs/screenshots/web-stats.png) |
+
+| 排行榜 | 管理后台 |
+|--------|---------|
+| ![排行榜](docs/screenshots/web-ranking.png) | ![管理后台](docs/screenshots/web-admin.png) |
 
 ### Flutter App 端
 
-| 主页 | 选手列表 | 战队详情 | 约战大厅 | 个人中心 |
-|------|---------|---------|---------|---------|
-| ![主页](docs/screenshots/app-home.png) | ![选手列表](docs/screenshots/app-players.png) | ![战队详情](docs/screenshots/app-team-detail.png) | ![约战大厅](docs/screenshots/app-matches.png) | ![个人中心](docs/screenshots/app-profile.png) |
+| 登录 | 首页 | 排行榜 | 约战大厅 | 招募大厅 | 个人中心 |
+|------|------|--------|---------|---------|---------|
+| ![登录](docs/screenshots/app-login.png) | ![首页](docs/screenshots/app-home.png) | ![排行榜](docs/screenshots/app-ranking.png) | ![约战大厅](docs/screenshots/app-matches.png) | ![招募大厅](docs/screenshots/app-recruit.png) | ![个人中心](docs/screenshots/app-profile.png) |
 
 > 💡 **界面风格**：英雄联盟赛事级别电竞主题，采用深色背景 + 金色/蓝色/青色霓虹光效，磨砂玻璃卡片设计。
 
