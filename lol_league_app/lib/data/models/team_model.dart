@@ -69,11 +69,22 @@ class TeamModel {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'name': name,
       'logo': logo,
+      'captainId': captainId,
       'regionGroup': regionGroup,
       'regionSmall': regionSmall,
       'description': description,
+      'level': level,
+      'wins': wins,
+      'losses': losses,
+      'winStreak': winStreak,
+      'score': score,
+      'recruitStatus': recruitStatus,
+      'memberCount': memberCount,
+      'createdAt': createdAt?.toIso8601String(),
+      'updatedAt': updatedAt?.toIso8601String(),
     };
   }
 

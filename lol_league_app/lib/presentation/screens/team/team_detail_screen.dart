@@ -30,38 +30,36 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
   void _loadTeam() async {
     if (!mounted) return;
 
-    // 先确保加载了当前选手信息
     await context.read<PlayerProvider>().loadCurrentPlayer();
     if (!mounted) return;
 
-    // 同步 AuthProvider 的 currentPlayer
     final player = context.read<PlayerProvider>().currentPlayer;
     if (player != null) {
       context.read<AuthProvider>().setCurrentPlayer(player);
     }
 
-    // 加载战队详情
     await context.read<TeamProvider>().loadTeamById(widget.teamId);
     if (mounted) {
-      setState(() {
-        _isInitialLoading = false;
-      });
+      setState(() => _isInitialLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 初始加载时显示加载画面
-    if (_isInitialLoading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('战队详情')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
     return Scaffold(
+      backgroundColor: AppColors.backgroundDeep,
       appBar: AppBar(
-        title: const Text('战队详情'),
+        backgroundColor: AppColors.backgroundPrimary,
+        foregroundColor: AppColors.textPrimary,
+        elevation: 0,
+        title: const Text(
+          '战队详情',
+          style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: AppColors.textPrimary),
+          onPressed: () => context.pop(),
+        ),
         actions: [
           Consumer<TeamProvider>(
             builder: (context, provider, _) {
@@ -71,6 +69,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
               final isCaptain = currentPlayerId == team.captainId;
               if (!isCaptain) return const SizedBox();
               return PopupMenuButton<String>(
+                color: AppColors.backgroundCard,
+                icon: const Icon(Icons.more_vert, color: AppColors.textSecondary),
                 onSelected: (value) {
                   if (value == 'edit') {
                     _showEditDialog(context, team);
@@ -79,157 +79,445 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                   }
                 },
                 itemBuilder: (context) => [
-                  const PopupMenuItem(value: 'edit', child: Text('修改战队信息')),
-                  const PopupMenuItem(value: 'delete', child: Text('解散战队', style: TextStyle(color: Colors.red))),
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Row(children: [
+                      Icon(Icons.edit, color: AppColors.neonBlue, size: 18),
+                      SizedBox(width: 8),
+                      Text('修改战队信息', style: TextStyle(color: AppColors.textPrimary)),
+                    ]),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(children: [
+                      Icon(Icons.delete_forever, color: AppColors.neonRed, size: 18),
+                      SizedBox(width: 8),
+                      Text('解散战队', style: TextStyle(color: AppColors.neonRed)),
+                    ]),
+                  ),
                 ],
               );
             },
           ),
         ],
       ),
-      body: Consumer<TeamProvider>(
-        builder: (context, provider, _) {
-          if (provider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: _isInitialLoading
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: AppColors.neonBlue),
+                  const SizedBox(height: 16),
+                  const Text('加载战队信息...', style: TextStyle(color: AppColors.textSecondary)),
+                ],
+              ),
+            )
+          : Consumer<TeamProvider>(
+              builder: (context, provider, _) {
+                if (provider.isLoading) {
+                  return Center(child: CircularProgressIndicator(color: AppColors.neonBlue));
+                }
 
-          final team = provider.currentTeam;
-          if (team == null) {
-            return const EmptyState(message: '战队不存在', icon: Icons.group_off);
-          }
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: CircleAvatar(
-                    radius: 50,
-                    backgroundColor: Theme.of(context).primaryColor,
-                    child: Text(
-                      team.name.isNotEmpty ? team.name.substring(0, 1) : '?',
-                      style: const TextStyle(fontSize: 40, color: Colors.white),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Center(
-                  child: Text(
-                    team.name,
-                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Center(
-                  child: Text(
-                    RegionData.isIndependentRegion(team.regionGroup)
-                        ? team.regionGroup
-                        : '${team.regionGroup}-${team.regionSmall}',
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
+                final team = provider.currentTeam;
+                if (team == null) {
+                  return const Center(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text('战队信息', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        const Divider(),
-                        _buildInfoRow('队长', team.captain?.matchName ?? '未知'),
-                        _buildInfoRow('大区', RegionData.isIndependentRegion(team.regionGroup)
-                            ? team.regionGroup
-                            : '${team.regionGroup}-${team.regionSmall}'),
-                        _buildInfoRow('等级', team.level.isNotEmpty ? team.level : '普通'),
-                        _buildInfoRow('积分', '${team.score}'),
-                        _buildInfoRow('战绩', '${team.wins}胜 ${team.losses}负'),
-                        _buildInfoRow('连胜', '${team.winStreak}'),
-                        if (team.description.isNotEmpty) ...[
-                          const Divider(),
-                          _buildInfoRow('简介', team.description),
-                        ],
+                        Icon(Icons.group_off, size: 64, color: AppColors.textMuted),
+                        SizedBox(height: 16),
+                        Text('战队不存在', style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
                       ],
                     ),
+                  );
+                }
+
+                return CyberBackground(
+                  child: RefreshIndicator(
+                    onRefresh: () async => _loadTeam(),
+                    color: AppColors.neonBlue,
+                    backgroundColor: AppColors.backgroundCard,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildTeamHeader(team),
+                          const SizedBox(height: 20),
+                          _buildTeamStats(team),
+                          const SizedBox(height: 20),
+                          _buildTeamInfo(team),
+                          const SizedBox(height: 20),
+                          _buildMembersList(context, team),
+                          const SizedBox(height: 24),
+                          _buildActionButtons(context, team.captainId),
+                          const SizedBox(height: 40),
+                        ],
+                      ),
+                    ),
                   ),
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _buildTeamHeader(team) {
+    final regionText = RegionData.isIndependentRegion(team.regionGroup)
+        ? team.regionGroup
+        : '${team.regionGroup}-${team.regionSmall}';
+
+    return GlassCard(
+      hasGlow: true,
+      glowColor: AppColors.neonGold,
+      borderColor: AppColors.neonGold.withOpacity(0.25),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          // 战队LOGO
+          Container(
+            width: 90,
+            height: 90,
+            decoration: BoxDecoration(
+              gradient: AppConstants.goldGradient,
+              shape: BoxShape.circle,
+              boxShadow: AppConstants.neonGlow(AppColors.neonGold, 20),
+            ),
+            child: Center(
+              child: Text(
+                team.name.isNotEmpty ? team.name.substring(0, 1) : '?',
+                style: const TextStyle(
+                  fontSize: 40,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
-                const SizedBox(height: 16),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // 战队名称
+          Text(
+            team.name,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+              letterSpacing: 1,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          // 大区信息
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.neonBlue.withAlpha(20),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.neonBlue.withAlpha(60)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.location_on, size: 14, color: AppColors.neonBlue),
+                const SizedBox(width: 6),
+                Text(
+                  regionText,
+                  style: const TextStyle(color: AppColors.neonBlue, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          if (team.description.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              team.description,
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTeamStats(team) {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildStatCard('积分', '${team.score}', Icons.emoji_events, AppColors.neonGold),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildStatCard('胜场', '${team.wins}', Icons.check_circle, AppColors.neonGreen),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildStatCard('负场', '${team.losses}', Icons.cancel, AppColors.neonRed),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildStatCard('连胜', '${team.winStreak}', Icons.local_fire_department, AppColors.neonOrange),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+    return GlassCard(
+      hasGlow: false,
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTeamInfo(team) {
+    final regionText = RegionData.isIndependentRegion(team.regionGroup)
+        ? team.regionGroup
+        : '${team.regionGroup}-${team.regionSmall}';
+
+    return GlassCard(
+      hasGlow: false,
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.neonBlue.withAlpha(25),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.info_outline, color: AppColors.neonBlue, size: 18),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  '战队信息',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.borderDefault),
+          _buildInfoRow('队长', team.captain?.matchName ?? '未知', Icons.military_tech, AppColors.neonGold),
+          const Divider(height: 1, color: AppColors.borderDefault, indent: 16, endIndent: 16),
+          _buildInfoRow('大区', regionText, Icons.location_on, AppColors.neonBlue),
+          const Divider(height: 1, color: AppColors.borderDefault, indent: 16, endIndent: 16),
+          _buildInfoRow('等级', team.level.isNotEmpty ? team.level : '普通', Icons.star, AppColors.neonPurple),
+          const Divider(height: 1, color: AppColors.borderDefault, indent: 16, endIndent: 16),
+          _buildInfoRow('胜率', team.wins + team.losses > 0
+              ? '${(team.wins / (team.wins + team.losses) * 100).toStringAsFixed(1)}%'
+              : '0%',
+              Icons.percent, AppColors.neonGreen),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withAlpha(20),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 16, color: color),
+          ),
+          const SizedBox(width: 14),
+          Text(
+            label,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMembersList(BuildContext context, team) {
+    final currentPlayerId = context.read<AuthProvider>().currentPlayer?.id;
+    final isCurrentCaptain = currentPlayerId == team.captainId;
+
+    return GlassCard(
+      hasGlow: false,
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.neonPurple.withAlpha(25),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.people, color: AppColors.neonPurple, size: 18),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '成员 (${team.members.length}/5)',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.borderDefault),
+          if (team.members.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Column(
+                children: [
+                  Icon(Icons.person_off, size: 48, color: AppColors.textMuted),
+                  SizedBox(height: 12),
+                  Text('暂无成员', style: TextStyle(color: AppColors.textSecondary)),
+                ],
+              ),
+            )
+          else
+            ...team.members.asMap().entries.map((entry) {
+              final index = entry.key;
+              final member = entry.value;
+              final isCaptain = member.id == team.captainId;
+
+              return Column(
+                children: [
+                  if (index > 0) const Divider(height: 1, color: AppColors.borderDefault, indent: 16, endIndent: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
                       children: [
-                        Text(
-                          '成员 (${team.members.length})',
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        // 头像
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            gradient: isCaptain ? AppConstants.goldGradient : AppConstants.primaryGradient,
+                            shape: BoxShape.circle,
+                            boxShadow: AppConstants.neonGlow(isCaptain ? AppColors.neonGold : AppColors.neonBlue, 10),
+                          ),
+                          child: Center(
+                            child: Text(
+                              member.matchName.isNotEmpty ? member.matchName.substring(0, 1) : '?',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
                         ),
-                        const Divider(),
-                        if (team.members.isEmpty)
-                          const Center(child: Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Text('暂无成员'),
-                          ))
-                        else
-                          ...team.members.map((member) {
-                            final isCaptain = member.id == team.captainId;
-                            final currentPlayerId = context.read<AuthProvider>().currentPlayer?.id;
-                            final isCurrentCaptain = currentPlayerId == team.captainId;
-                            return ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: CircleAvatar(child: Text(member.matchName.isNotEmpty ? member.matchName.substring(0, 1) : '?')),
-                              title: Row(
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                                  Text(member.matchName),
+                                  Text(
+                                    member.matchName,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
                                   if (isCaptain) ...[
                                     const SizedBox(width: 8),
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: AppColors.neonGold.withAlpha(50),
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: AppColors.neonGold.withAlpha(128)),
+                                        color: AppColors.neonGold.withAlpha(40),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: AppColors.neonGold.withAlpha(120)),
                                       ),
                                       child: const Text(
                                         '队长',
-                                        style: TextStyle(color: AppColors.neonGold, fontSize: 10),
+                                        style: TextStyle(color: AppColors.neonGold, fontSize: 10, fontWeight: FontWeight.bold),
                                       ),
                                     ),
                                   ],
                                 ],
                               ),
-                              subtitle: Text(member.position),
-                              trailing: isCurrentCaptain && !isCaptain
-                                  ? IconButton(
-                                      icon: const Icon(Icons.remove_circle_outline, color: AppColors.neonRed),
-                                      onPressed: () => _showKickDialog(context, member),
-                                    )
-                                  : null,
-                            );
-                          }),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  _buildMiniChip(member.position, AppColors.neonPurple),
+                                  const SizedBox(width: 6),
+                                  _buildMiniChip('胜率${member.winRate}%', AppColors.neonGreen),
+                                  const SizedBox(width: 6),
+                                  _buildMiniChip('KDA ${member.kdaDisplay}', AppColors.neonBlue),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        // 踢出按钮（队长才显示）
+                        if (isCurrentCaptain && !isCaptain)
+                          GestureDetector(
+                            onTap: () => _showKickDialog(context, member),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.neonRed.withAlpha(20),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppColors.neonRed.withAlpha(60)),
+                              ),
+                              child: const Icon(Icons.remove_circle_outline, color: AppColors.neonRed, size: 20),
+                            ),
+                          ),
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 24),
-                _buildActionButtons(context, team.captainId),
-              ],
-            ),
-          );
-        },
+                ],
+              );
+            }),
+        ],
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(color: Colors.grey)),
-          Text(value),
-        ],
+  Widget _buildMiniChip(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withAlpha(20),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withAlpha(60)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -243,17 +531,19 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
       return Row(
         children: [
           Expanded(
-            child: AppButton(
+            child: NeonButton(
               text: '发布约战',
+              icon: Icons.sports_esports,
               onPressed: () => context.push('/match/create'),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: AppButton(
+            child: NeonButton(
               text: '招募成员',
               isOutlined: true,
               color: AppColors.neonGold,
+              icon: Icons.person_add,
               onPressed: () => context.push('/team/recruit/${widget.teamId}'),
             ),
           ),
@@ -261,26 +551,25 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
       );
     }
 
-    // 如果用户在其他战队（查看的战队不是自己的战队）
     if (hasTeam && authProvider.currentPlayer?.teamId != widget.teamId) {
       return const Center(
         child: Text('您已在其他战队', style: TextStyle(color: AppColors.textSecondary)),
       );
     }
 
-    // 如果用户在自己的战队（且不是队长）
     if (hasTeam && authProvider.currentPlayer?.teamId == widget.teamId) {
-      return Center(
-        child: OutlinedButton(
-          onPressed: () => _showLeaveDialog(context),
-          style: OutlinedButton.styleFrom(foregroundColor: AppColors.neonRed),
-          child: const Text('退出当前战队'),
-        ),
+      return NeonButton(
+        text: '退出当前战队',
+        isOutlined: true,
+        color: AppColors.neonRed,
+        icon: Icons.exit_to_app,
+        onPressed: () => _showLeaveDialog(context),
       );
     }
 
-    return AppButton(
-      text: '申请加入',
+    return NeonButton(
+      text: '申请加入战队',
+      icon: Icons.group_add,
       onPressed: () async {
         final success = await context.read<TeamProvider>().joinTeam(widget.teamId);
         if (success && context.mounted) {
@@ -289,10 +578,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
             context.read<AuthProvider>().setCurrentPlayer(
               context.read<PlayerProvider>().currentPlayer,
             );
-          }
-          if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('申请成功'), backgroundColor: Colors.green),
+              const SnackBar(content: Text('申请成功，请等待队长审核'), backgroundColor: Colors.green),
             );
           }
         } else if (context.mounted) {
@@ -311,7 +598,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
     final nameController = TextEditingController(text: team.name);
     final descController = TextEditingController(text: team.description);
 
-    // 设置默认大区值
     String defaultRegionId = '艾欧尼亚';
     if (team.regionGroup is String) {
       final regionGroup = team.regionGroup as String;
@@ -323,7 +609,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
       }
     }
 
-    // 检查默认值是否存在
     final exists = RegionData.allSmallRegions.any((r) => r['id'] == defaultRegionId);
     String selectedRegion = exists ? defaultRegionId : '艾欧尼亚';
 
@@ -331,20 +616,28 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('修改战队信息'),
+          backgroundColor: AppColors.backgroundCard,
+          title: const Text('修改战队信息', style: TextStyle(color: AppColors.textPrimary)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: nameController,
-                  decoration: const InputDecoration(labelText: '战队名称'),
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: const InputDecoration(
+                    labelText: '战队名称',
+                    labelStyle: TextStyle(color: AppColors.textSecondary),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   value: selectedRegion,
+                  dropdownColor: AppColors.backgroundCard,
+                  style: const TextStyle(color: AppColors.textPrimary),
                   decoration: const InputDecoration(
                     labelText: '服务器',
+                    labelStyle: TextStyle(color: AppColors.textSecondary),
                     border: OutlineInputBorder(),
                   ),
                   items: RegionData.allSmallRegions.map((region) {
@@ -362,7 +655,11 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: descController,
-                  decoration: const InputDecoration(labelText: '战队简介'),
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: const InputDecoration(
+                    labelText: '战队简介',
+                    labelStyle: TextStyle(color: AppColors.textSecondary),
+                  ),
                   maxLines: 3,
                 ),
               ],
@@ -371,13 +668,12 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
+              child: const Text('取消', style: TextStyle(color: AppColors.textSecondary)),
             ),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonBlue),
               onPressed: () async {
                 Navigator.pop(ctx);
-
-                // 解析大区
                 String regionGroup;
                 String regionSmall;
                 if (selectedRegion.contains('-')) {
@@ -388,7 +684,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                   regionGroup = selectedRegion;
                   regionSmall = '';
                 }
-
                 final success = await context.read<TeamProvider>().updateTeam(
                   widget.teamId,
                   name: nameController.text.trim(),
@@ -418,14 +713,16 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('解散战队'),
-        content: const Text('确定要解散战队吗？此操作不可恢复！'),
+        backgroundColor: AppColors.backgroundCard,
+        title: const Text('解散战队', style: TextStyle(color: AppColors.neonRed)),
+        content: const Text('确定要解散战队吗？此操作不可恢复！', style: TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: const Text('取消', style: TextStyle(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonRed),
             onPressed: () async {
               Navigator.pop(ctx);
               final success = await context.read<TeamProvider>().deleteTeam(widget.teamId);
@@ -435,8 +732,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                   context.read<AuthProvider>().setCurrentPlayer(
                     context.read<PlayerProvider>().currentPlayer,
                   );
-                }
-                if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('战队已解散'), backgroundColor: Colors.green),
                   );
@@ -448,7 +743,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                 );
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonRed),
             child: const Text('确认解散'),
           ),
         ],
@@ -460,14 +754,16 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('退出战队'),
-        content: const Text('确定要退出当前战队吗？'),
+        backgroundColor: AppColors.backgroundCard,
+        title: const Text('退出战队', style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text('确定要退出当前战队吗？', style: TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: const Text('取消', style: TextStyle(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonRed),
             onPressed: () async {
               Navigator.pop(ctx);
               final success = await context.read<TeamProvider>().leaveTeam(widget.teamId);
@@ -477,22 +773,16 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                   context.read<AuthProvider>().setCurrentPlayer(
                     context.read<PlayerProvider>().currentPlayer,
                   );
-                }
-                if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('已退出战队'), backgroundColor: Colors.green),
                   );
                 }
               } else if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(context.read<TeamProvider>().error ?? '退出失败'),
-                    backgroundColor: Colors.red,
-                  ),
+                  SnackBar(content: Text(context.read<TeamProvider>().error ?? '退出失败'), backgroundColor: Colors.red),
                 );
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonRed),
             child: const Text('确认退出'),
           ),
         ],
@@ -504,14 +794,16 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('移除队员'),
-        content: Text('确定要将 ${member.matchName} 从战队中移除吗？'),
+        backgroundColor: AppColors.backgroundCard,
+        title: const Text('移除队员', style: TextStyle(color: AppColors.textPrimary)),
+        content: Text('确定要将 ${member.matchName} 从战队中移除吗？', style: const TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: const Text('取消', style: TextStyle(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonRed),
             onPressed: () async {
               Navigator.pop(ctx);
               final success = await context.read<TeamProvider>().kickTeamMember(widget.teamId, member.id);
@@ -521,22 +813,16 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                   context.read<AuthProvider>().setCurrentPlayer(
                     context.read<PlayerProvider>().currentPlayer,
                   );
-                }
-                if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('已将 ${member.matchName} 移除'), backgroundColor: Colors.green),
                   );
                 }
               } else if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(context.read<TeamProvider>().error ?? '移除失败'),
-                    backgroundColor: Colors.red,
-                  ),
+                  SnackBar(content: Text(context.read<TeamProvider>().error ?? '移除失败'), backgroundColor: Colors.red),
                 );
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonRed),
             child: const Text('确认移除'),
           ),
         ],

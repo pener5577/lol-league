@@ -90,26 +90,32 @@ app = FastAPI(
 @app.on_event("startup")
 def create_admin_user():
     """启动时创建默认管理员账号"""
+    admin_username = os.getenv("ADMIN_USERNAME")
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    if not admin_username or not admin_password:
+        print("警告: 未设置 ADMIN_USERNAME 或 ADMIN_PASSWORD 环境变量，跳过管理员账号创建")
+        return
+
     db = SessionLocal()
     try:
         # 检查管理员是否已存在
-        admin = db.query(models.User).filter(models.User.username == "pener").first()
+        admin = db.query(models.User).filter(models.User.username == admin_username).first()
         if not admin:
             # 创建管理员
             admin = models.User(
-                username="pener",
-                hashed_password=get_password_hash("pener123"),
+                username=admin_username,
+                hashed_password=get_password_hash(admin_password),
                 is_admin=True
             )
             db.add(admin)
             db.commit()
-            print("管理员账号已创建: pener / pener123")
+            print(f"管理员账号已创建: {admin_username}")
         else:
             # 确保已有账号是管理员
             if not admin.is_admin:
                 admin.is_admin = True
                 db.commit()
-                print("已将 pener 设为管理员")
+                print(f"已将 {admin_username} 设为管理员")
     except Exception as e:
         db.rollback()
         print(f"管理员创建警告: {e}")
@@ -117,12 +123,19 @@ def create_admin_user():
         db.close()
 
 # CORS 配置
+_cors_origins_env = os.getenv("CORS_ORIGINS", "")
+_allowed_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()] if _cors_origins_env else [
+    "http://localhost:3000", "http://127.0.0.1:3000",
+    "http://localhost:5500", "http://127.0.0.1:5500",
+    "http://localhost:8080", "http://127.0.0.1:8080"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # 获取当前目录
@@ -1170,9 +1183,14 @@ async def submit_result(
     mvp_player_id = None
     best_kda = 0
 
-    # 获取胜方队伍的选手ID列表
-    winner_player_ids = [p["playerId"] for p in result_data.playerStats
-                         if p.get("playerId") and p.get("teamId") == result_data.winnerId]
+    # 获取胜方队伍的选手ID列表（通过数据库查询，不依赖前端传入的teamId）
+    winner_team_members = db.query(models.Player).filter(models.Player.team_id == result_data.winnerId).all()
+    winner_player_ids = {p.id for p in winner_team_members}
+
+    # 同时通过playerStats中的teamId判断（兼容前端传入teamId的情况）
+    for p in result_data.playerStats:
+        if p.get("teamId") == result_data.winnerId and p.get("playerId"):
+            winner_player_ids.add(p["playerId"])
 
     for ps in result_data.playerStats:
         player = db.query(models.Player).filter(models.Player.id == ps["playerId"]).first()
@@ -1189,6 +1207,11 @@ async def submit_result(
             player.wins += 1
         else:
             player.losses += 1
+
+        # 重新计算胜率和KDA
+        if player.games_played > 0:
+            player.win_rate = round(player.wins * 100 / player.games_played)
+        player.kda = round((player.kills + player.assists) / max(player.deaths, 1), 2)
 
         kda = (ps.get("kills", 0) + ps.get("assists", 0)) / max(ps.get("deaths", 1), 1)
         if kda > best_kda:

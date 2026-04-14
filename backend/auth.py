@@ -10,9 +10,10 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from database import get_db
 import models
+import os
 
 # 配置
-SECRET_KEY = "lol-league-secret-key-2024-change-in-production"
+SECRET_KEY = os.getenv("SECRET_KEY", "lol-league-dev-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7
 

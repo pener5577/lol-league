@@ -131,18 +131,16 @@ class _MatchesTabState extends State<MatchesTab> with SingleTickerProviderStateM
 
   Widget _buildFilterBar() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
             _buildFilterChip('全部大区', null),
-            const SizedBox(width: 10),
-            _buildFilterChip('艾欧尼亚', '艾欧尼亚'),
-            const SizedBox(width: 10),
-            _buildFilterChip('比尔吉沃特', '比尔吉沃特'),
-            const SizedBox(width: 10),
-            _buildFilterChip('德玛西亚', '德玛西亚'),
+            ...RegionData.allGroups.map((group) => Padding(
+              padding: const EdgeInsets.only(left: 10),
+              child: _buildFilterChip(group, group),
+            )),
           ],
         ),
       ),

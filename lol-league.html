@@ -998,7 +998,7 @@
                     <i class="fas fa-broadcast-tower text-[#4A9BE5]"></i>
                     <span class="text-white">直播预告</span>
                 </h2>
-                <span class="text-sm text-[#C89B3C] flex items-center gap-2">
+                <span id="liveStatusBadge" class="text-sm text-[#C89B3C] flex items-center gap-2 hidden">
                     <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
                     正在直播
                 </span>
@@ -2028,6 +2028,15 @@
                 }
                 matches = await API.Match.getAll({ status: '待应战' });
                 teams = await API.Team.getAll();
+                // 更新直播赛事计数
+                const liveCount = matches.filter(m => checkIsLivestream(m.time)).length;
+                document.getElementById('statLivestream').textContent = liveCount;
+                // 控制"正在直播"标识的显示
+                const liveStatusBadge = document.getElementById('liveStatusBadge');
+                if (liveStatusBadge) {
+                    if (liveCount > 0) liveStatusBadge.classList.remove('hidden');
+                    else liveStatusBadge.classList.add('hidden');
+                }
             } catch (error) {
                 console.log('API调用失败，使用本地数据');
                 matches = loadData('matches').filter(m => m.status === '待应战' || m.status === '已约战').slice(0, 6);
@@ -2071,9 +2080,9 @@
                         <div class="text-center">
                             <i class="fas ${team.logo} text-4xl text-esports-gold mb-3"></i>
                             <div class="font-bold text-lg">${team.name}</div>
-                            <div class="text-sm text-gray-400">${getDisplayRegion(team.regionGroup, team.regionSmall || team.name)} · ${team.city || '未知城市'}</div>
+                            <div class="text-sm text-gray-400">${getDisplayRegion(team.regionGroup, team.regionSmall)} · ${team.memberCount || team.members?.length || 0}人</div>
                             <div class="flex items-center justify-center gap-2 mt-2">
-                                <span class="px-2 py-0.5 rounded text-xs ${team.level === '王牌' ? 'badge-ace' : team.level === '精英' ? 'badge-elite' : 'badge-newbie'}">${team.level}</span>
+                                <span class="px-2 py-0.5 rounded text-xs ${team.level === '王牌' ? 'badge-ace' : team.level === '精英' ? 'badge-elite' : 'badge-newbie'}">${team.level || '新手'}</span>
                                 <span class="text-xs text-gray-400">${team.members?.length || 0}人</span>
                             </div>
                         </div>
@@ -2227,7 +2236,7 @@
                 }
             }
 
-            const currentPlayerId = currentPlayer?._id || currentPlayer?.id || localStorage.getItem(STORAGE_KEYS.currentPlayerId);
+            const currentPlayerId = currentPlayer?._id || currentPlayer?.id || parseInt(localStorage.getItem(STORAGE_KEYS.currentPlayerId));
             const filterRegion = document.getElementById('filterRegion')?.value || '';
             const filterPosition = document.getElementById('filterPosition')?.value || '';
 
@@ -2462,7 +2471,7 @@
 
             try {
                 const teams = await API.Team.getAll();
-                const currentPlayerId = API.getPlayerId();
+                const currentPlayerId = parseInt(API.getPlayerId());
                 const players = await API.Player.getAll();
                 const myTeam = teams.find(t => t.members?.some(m => m.id === currentPlayerId));
 
@@ -2534,7 +2543,7 @@
                                     </div>
                                 </div>
                                 <div class="flex flex-col items-end gap-1">
-                                    <span class="px-2 py-0.5 rounded text-xs ${team.level === '王牌' ? 'badge-ace' : team.level === '精英' ? 'badge-elite' : 'badge-newbie'}">${team.level}</span>
+                                    <span class="px-2 py-0.5 rounded text-xs ${team.level === '王牌' ? 'badge-ace' : team.level === '精英' ? 'badge-elite' : 'badge-newbie'}">${team.level || '新手'}</span>
                                 </div>
                             </div>
                             <div class="flex items-center justify-between pt-3 border-t border-white/10">
@@ -2721,9 +2730,7 @@
         async function renderRecruit() {
             const filtersEl = document.getElementById('recruitFilters');
             const listEl = document.getElementById('recruitList');
-            const currentPlayerId = API.getPlayerId();
-
-            // 初始化招募页面的选区下拉框
+            const currentPlayerId = parseInt(API.getPlayerId());
             initRecruitRegionSelects();
 
             try {
@@ -2908,7 +2915,7 @@
             try {
                 const teams = await API.Team.getAll();
                 const matches = await API.Match.getAll();
-                const currentPlayerId = API.getPlayerId();
+                const currentPlayerId = parseInt(API.getPlayerId());
                 const playerTeam = teams.find(t => t.members?.some(m => m.id === currentPlayerId));
 
                 // 渲染我的约战
@@ -2949,7 +2956,7 @@
             try {
                 const teams = await API.Team.getAll();
                 const matches = await API.Match.getAll();
-                const currentPlayerId = API.getPlayerId();
+                const currentPlayerId = parseInt(API.getPlayerId());
                 const playerTeam = teams.find(t => t.members?.some(m => m.id === currentPlayerId));
                 const battleListEl = document.getElementById('battleList');
 
@@ -3168,7 +3175,7 @@
 
         // ==================== 战绩中心 ====================
         async function renderStats() {
-            const currentPlayerId = API.getPlayerId();
+            const currentPlayerId = parseInt(API.getPlayerId());
 
             try {
                 const [players, teams, matchData] = await Promise.all([
@@ -3179,7 +3186,7 @@
 
                 const currentPlayer = players.find(p => p.id === currentPlayerId);
                 const playerTeam = teams.find(t => t.members?.some(m => m.id === currentPlayerId));
-                const matchResults = matchData.data || [];
+                const matchResults = matchData.results || matchData.data || matchData || [];
 
                 // 个人战绩
                 const personalStatsEl = document.getElementById('personalStats');
@@ -3730,11 +3737,10 @@
                 winnerSelect.innerHTML = '<option value="">选择胜方战队</option>' + teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
                 loserSelect.innerHTML = '<option value="">选择负方战队</option>' + teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
 
-                // 绑定战绩录入的事件
-                const resultMatchSelect = document.getElementById('resultMatchSelect');
-                if (resultMatchSelect) resultMatchSelect.addEventListener('change', updatePlayerStatsInputs);
-                if (winnerSelect) winnerSelect.addEventListener('change', updatePlayerStatsInputs);
-                if (loserSelect) loserSelect.addEventListener('change', updatePlayerStatsInputs);
+                // 绑定战绩录入的事件（使用onchange替代addEventListener避免重复绑定）
+                if (resultMatchSelect) resultMatchSelect.onchange = updatePlayerStatsInputs;
+                if (winnerSelect) winnerSelect.onchange = updatePlayerStatsInputs;
+                if (loserSelect) loserSelect.onchange = updatePlayerStatsInputs;
             } catch (e) {
                 console.error('加载管理员数据失败:', e);
                 showToast('加载数据失败', 'error');
@@ -3879,16 +3885,15 @@
                 return;
             }
 
-            // 构建选手战绩数据
+            // 构建选手战绩数据（通过id读取各选手输入框）
             const playerStats = [];
-            const statInputs = document.querySelectorAll('#playerStatsInputs .player-stat-row');
-            statInputs.forEach(row => {
-                const playerId = row.dataset.playerId;
-                const teamId = row.dataset.teamId;
-                const kills = parseInt(row.querySelector('.stat-kills').value) || 0;
-                const deaths = parseInt(row.querySelector('.stat-deaths').value) || 0;
-                const assists = parseInt(row.querySelector('.stat-assists').value) || 0;
-                playerStats.push({ playerId: parseInt(playerId), teamId: parseInt(teamId), kills, deaths, assists });
+            const killInputs = document.querySelectorAll('#playerStatsInputs input[id^="kills_"]');
+            killInputs.forEach(killInput => {
+                const playerId = killInput.id.replace('kills_', '');
+                const kills = parseInt(killInput.value) || 0;
+                const deaths = parseInt(document.getElementById(`deaths_${playerId}`)?.value) || 0;
+                const assists = parseInt(document.getElementById(`assists_${playerId}`)?.value) || 0;
+                playerStats.push({ playerId: parseInt(playerId), kills, deaths, assists });
             });
 
             try {
@@ -3974,14 +3979,14 @@
             }
         }
 
-        // 绑定约战选择和战队选择的change事件
+        // 绑定约战选择和战队选择的change事件（页面加载时初始化）
         document.addEventListener('DOMContentLoaded', function() {
             const resultMatchSelect = document.getElementById('resultMatchSelect');
             const resultWinnerTeam = document.getElementById('resultWinnerTeam');
             const resultLoserTeam = document.getElementById('resultLoserTeam');
-            if (resultMatchSelect) resultMatchSelect.addEventListener('change', updatePlayerStatsInputs);
-            if (resultWinnerTeam) resultWinnerTeam.addEventListener('change', updatePlayerStatsInputs);
-            if (resultLoserTeam) resultLoserTeam.addEventListener('change', updatePlayerStatsInputs);
+            if (resultMatchSelect) resultMatchSelect.onchange = updatePlayerStatsInputs;
+            if (resultWinnerTeam) resultWinnerTeam.onchange = updatePlayerStatsInputs;
+            if (resultLoserTeam) resultLoserTeam.onchange = updatePlayerStatsInputs;
         });
 
         async function adminResetData() {

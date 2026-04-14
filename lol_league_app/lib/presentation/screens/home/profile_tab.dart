@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../domain/providers/auth_provider.dart';
 import '../../../domain/providers/player_provider.dart';
+import '../../../domain/providers/team_provider.dart';
 import '../../../domain/providers/notification_provider.dart';
 import '../../widgets/common_widgets.dart';
 
@@ -25,9 +26,12 @@ class _ProfileTabState extends State<ProfileTab> {
     await context.read<PlayerProvider>().loadCurrentPlayer();
     await context.read<NotificationProvider>().loadUnreadCount();
     if (mounted) {
-      context.read<AuthProvider>().setCurrentPlayer(
-        context.read<PlayerProvider>().currentPlayer,
-      );
+      final player = context.read<PlayerProvider>().currentPlayer;
+      context.read<AuthProvider>().setCurrentPlayer(player);
+      // 如果选手有战队，加载战队信息
+      if (player?.teamId != null) {
+        await context.read<TeamProvider>().loadTeamById(player!.teamId!);
+      }
     }
   }
 
@@ -221,7 +225,7 @@ class _ProfileTabState extends State<ProfileTab> {
                     _buildInfoRow('游戏昵称', player.matchName, Icons.videogame_asset),
                     _buildInfoRow('游戏ID', player.gameId, Icons.tag),
                     _buildInfoRow('服务器', player.regionGroup, Icons.dns),
-                    _buildInfoRow('大区', RegionData.getGroupBySmallRegion(player.regionGroup), Icons.map),
+                    _buildInfoRow('大区', RegionData.getGroupBySmallRegion(player.regionSmall.isNotEmpty ? player.regionSmall : player.regionGroup), Icons.map),
                     _buildInfoRow('位置', player.position, Icons.location_on),
                     const Divider(height: 1, color: AppColors.borderDefault),
                     // 统计
@@ -321,9 +325,9 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   Widget _buildTeamInfo() {
-    return Consumer<PlayerProvider>(
-      builder: (context, provider, _) {
-        final player = provider.currentPlayer;
+    return Consumer2<PlayerProvider, TeamProvider>(
+      builder: (context, playerProvider, teamProvider, _) {
+        final player = playerProvider.currentPlayer;
         final teamId = player?.teamId;
 
         if (teamId == null) {
@@ -370,6 +374,10 @@ class _ProfileTabState extends State<ProfileTab> {
           );
         }
 
+        final team = teamProvider.currentTeam;
+        final teamName = (team != null && team.id == teamId) ? team.name : '战队 #$teamId';
+        final isCaptain = team != null && player?.id == team.captainId;
+
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: GestureDetector(
@@ -399,20 +407,41 @@ class _ProfileTabState extends State<ProfileTab> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          '战队成员',
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                          ),
+                        Row(
+                          children: [
+                            Text(
+                              teamName,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            if (isCaptain) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.neonGold.withAlpha(40),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: AppColors.neonGold.withAlpha(120)),
+                                ),
+                                child: const Text(
+                                  '队长',
+                                  style: TextStyle(color: AppColors.neonGold, fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '战队ID: $teamId',
+                          team != null
+                              ? '${team.wins}胜 ${team.losses}负 · 积分${team.score}'
+                              : '点击查看详情',
                           style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
                           ),
                         ),
                       ],

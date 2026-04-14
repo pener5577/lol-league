@@ -79,6 +79,9 @@ class PlayerModel {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
+      'userId': userId,
+      'teamId': teamId,
       'matchName': matchName,
       'gameId': gameId,
       'regionGroup': regionGroup,
@@ -86,6 +89,19 @@ class PlayerModel {
       'position': position,
       'onlineTime': onlineTime,
       'bio': bio,
+      'avatar': avatar,
+      'wins': wins,
+      'losses': losses,
+      'kills': kills,
+      'deaths': deaths,
+      'assists': assists,
+      'mvpCount': mvpCount,
+      'gamesPlayed': gamesPlayed,
+      'winStreak': winStreak,
+      'winRate': winRate,
+      'kda': kda,
+      'createdAt': createdAt?.toIso8601String(),
+      'updatedAt': updatedAt?.toIso8601String(),
     };
   }
 

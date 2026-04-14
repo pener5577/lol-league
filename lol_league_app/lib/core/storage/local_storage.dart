@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class LocalStorage {
@@ -28,13 +29,14 @@ class LocalStorage {
 
   // 用户数据管理
   Future<void> saveUser(Map<String, dynamic> userData) async {
-    final String encoded = userData.toString();
+    final String encoded = json.encode(userData);
     await _storage.write(key: _userKey, value: encoded);
   }
 
   Future<Map<String, dynamic>?> getUser() async {
     final String? data = await _storage.read(key: _userKey);
-    return null; // 简化处理，实际应该解析
+    if (data == null) return null;
+    return json.decode(data) as Map<String, dynamic>;
   }
 
   Future<void> removeUser() async {
